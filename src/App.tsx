@@ -61,6 +61,13 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [notice]);
 
+  // まえ／つぎ・スワイプは循環する（①→②→③→①、①→③→②→①）
+  const stepPage = useCallback((delta: -1 | 1) => {
+    setDirection(delta);
+    setPage((p) => (p + delta + PAGES.length) % PAGES.length);
+  }, []);
+
+  // ページ番号の点から直接選ぶとき
   const changePage = useCallback(
     (next: number) => {
       if (next < 0 || next >= PAGES.length || next === page) return;
@@ -81,8 +88,8 @@ export default function App() {
     [settings.repeatGuardMs],
   );
 
-  const doSpeak = (text: string, rate?: number) => {
-    const result = speak(text, rate !== undefined ? { rate } : undefined);
+  const doSpeak = (text: string, voiceURI?: string | null) => {
+    const result = speak(text, voiceURI ? { voiceURI } : undefined);
     if (!result.ok) setNotice(SPEAK_ERRORS[result.reason]);
     else setNotice('');
     return result;
@@ -181,8 +188,8 @@ export default function App() {
           </button>
         </div>
 
-        <Board page={page} onPageChange={changePage} onInput={onInput} direction={direction} />
-        <Pager page={page} onPageChange={changePage} />
+        <Board page={page} onStep={stepPage} onInput={onInput} direction={direction} />
+        <Pager page={page} onStep={stepPage} onPageChange={changePage} />
       </main>
 
       {confirmClear && (
@@ -218,7 +225,7 @@ export default function App() {
           voices={voices}
           activeVoice={activeVoice}
           speechSupported={supported}
-          onTest={(rate) => doSpeak(TEST_TEXT, rate)}
+          onTest={(voiceURI) => doSpeak(TEST_TEXT, voiceURI)}
           onStop={stop}
           storageOk={storageOk}
           onClose={() => setPanel('none')}

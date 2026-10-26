@@ -3,7 +3,7 @@ import App from './App';
 import { Speaker } from './speech/speech';
 import { setSpeakerForTesting } from './speech/useSpeech';
 import { STORAGE_KEYS } from './state/storage';
-import { FakeSynth, FakeUtterance } from './test/fakeSpeech';
+import { FakeSynth, FakeUtterance, IOS_JA_VOICES } from './test/fakeSpeech';
 
 let synth: FakeSynth;
 
@@ -139,9 +139,57 @@ describe('こえのわ 画面', () => {
     expect(shown()).toBe('');
     swipe(key('だ'), 120); // 右へ → 前
     expect(screen.getByRole('group', { name: /1ページ目/ })).toBeInTheDocument();
-    swipe(key('あ'), 120); // 最初のページでさらに右へ → そのまま
-    expect(screen.getByRole('group', { name: /1ページ目/ })).toBeInTheDocument();
     expect(shown()).toBe('');
+  });
+
+  const current = () => screen.getByRole('group', { name: /ページ目/ }).getAttribute('aria-label');
+
+  it('左スワイプは ①→②→③→① と循環し、なぞっても文字は入らない', () => {
+    render(<App />);
+    const seen = [current()];
+    for (const k of ['な', 'だ', 'ちいさい あ']) {
+      swipe(key(k), -120);
+      seen.push(current());
+    }
+    expect(seen).toEqual([
+      '1ページ目 せいおん（きほんの文字）',
+      '2ページ目 だくおん・はんだくおん',
+      '3ページ目 ちいさい文字・きごう',
+      '1ページ目 せいおん（きほんの文字）',
+    ]);
+    expect(shown()).toBe('');
+  });
+
+  it('右スワイプは ①→③→②→① と循環する', () => {
+    render(<App />);
+    const seen = [current()];
+    for (const k of ['な', 'ちいさい あ', 'だ']) {
+      swipe(key(k), 120);
+      seen.push(current());
+    }
+    expect(seen.map((s) => s![0])).toEqual(['1', '3', '2', '1']);
+    expect(shown()).toBe('');
+  });
+
+  it('「まえ」「つぎ」ボタンも循環し、ページ表示・点・文章・カーソルが保たれる', () => {
+    render(<App />);
+    typeSeion('あい');
+    const next = screen.getByRole('button', { name: 'つぎの文字盤' });
+    const prev = screen.getByRole('button', { name: 'まえの文字盤' });
+    expect(prev).toBeEnabled();
+    fireEvent.click(prev);
+    expect(current()).toMatch(/^3ページ目/);
+    expect(screen.getByRole('button', { name: /^3ページ目/ })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(next);
+    expect(current()).toMatch(/^1ページ目/);
+    fireEvent.click(next);
+    fireEvent.click(next);
+    fireEvent.click(next);
+    expect(current()).toMatch(/^1ページ目/);
+    expect(screen.getByRole('button', { name: /^1ページ目/ })).toHaveAttribute('aria-current', 'page');
+    tap(key('う'));
+    expect(shown()).toBe('あいう');
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.draft)!)).toMatchObject({ cursor: 3, page: 0 });
   });
 
   it('押し始めと違うキーで click が起きても入力しない／指が少しぶれても入力する', () => {
@@ -270,5 +318,81 @@ describe('音声の設定', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ためしにきく' }));
     expect(synth.spoken.at(-1)?.rate).toBe(0.75);
     expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!).rate).toBe('slow');
+  });
+});
+
+describe('男性・女性の声の選択', () => {
+  const openSettings = () => fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+  const dialog = () => screen.getByRole('dialog', { name: 'せってい' });
+
+  it('男性・女性・性別不明に分けて表示し、試聴・選択・保存ができる', () => {
+    synth.voiceList = [...IOS_JA_VOICES, { name: 'Google 日本語', lang: 'ja-JP', localService: false, voiceURI: 'g', default: false } as SpeechSynthesisVoice];
+    const { unmount } = render(<App />);
+    openSettings();
+    const d = within(dialog());
+    expect(d.getByRole('heading', { name: '男性の声' })).toBeInTheDocument();
+    expect(d.getByRole('heading', { name: '女性の声' })).toBeInTheDocument();
+    // 端末内の声だけを表示する（オンラインの声は許可するまで出さない）。英語の声も出さない
+    expect(d.queryByText('Google 日本語')).not.toBeInTheDocument();
+    expect(d.queryByText('Samantha')).not.toBeInTheDocument();
+    expect(d.getByText(/使える日本語の声：7件/)).toBeInTheDocument();
+    expect(d.queryByText(/男性の日本語の声が見つかりません/)).not.toBeInTheDocument();
+
+    // 選択を変えずに男女それぞれを試聴できる
+    fireEvent.click(d.getByRole('button', { name: 'Otoyaを試聴' }));
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Otoya');
+    fireEvent.click(d.getByRole('button', { name: 'Kyokoを試聴' }));
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
+    expect(synth.spoken.every((u) => u.pitch === 1)).toBe(true);
+    // 既定は高品質の声
+    expect(d.getByRole('radio', { name: /Kyoko（拡張）/ })).toBeChecked();
+
+    fireEvent.click(d.getByRole('radio', { name: /^Otoya（拡張）/ }));
+    fireEvent.click(d.getByRole('radio', { name: 'ふつう' }));
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!)).toMatchObject({
+      voiceURI: 'com.apple.voice.enhanced.ja-JP.Otoya',
+      rate: 'normal',
+    });
+    fireEvent.click(d.getByRole('button', { name: 'とじる' }));
+
+    // 次回起動時にも選んだ声で話す
+    unmount();
+    render(<App />);
+    typeSeion('はい');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'はい', rate: 0.95 });
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Otoya（拡張）');
+    openSettings();
+    expect(within(dialog()).getByRole('radio', { name: /^Otoya（拡張）/ })).toBeChecked();
+
+    // 女性の声へ戻せる
+    fireEvent.click(within(dialog()).getByRole('radio', { name: /^Kyoko（拡張）/ }));
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'ためしにきく' }));
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko（拡張）');
+  });
+
+  it('男性の声がないときは理由と端末の設定を案内し、名前が不明な声は分類しない', () => {
+    synth.voiceList = [
+      { name: 'Kyoko', lang: 'ja-JP', localService: true, voiceURI: 'k', default: false } as SpeechSynthesisVoice,
+      { name: 'ja-jp-x-htm-local', lang: 'ja-JP', localService: true, voiceURI: 'x', default: false } as SpeechSynthesisVoice,
+    ];
+    render(<App />);
+    openSettings();
+    const d = within(dialog());
+    expect(d.queryByRole('heading', { name: '男性の声' })).not.toBeInTheDocument();
+    expect(d.getByRole('heading', { name: /性別を判断できない声/ })).toBeInTheDocument();
+    expect(d.getByText('男性の日本語の声が見つかりません。')).toBeInTheDocument();
+    expect(d.getByText(/読み上げコンテンツ/)).toBeInTheDocument();
+    expect(d.getByText(/性別を判断できない声」の中に男性の声/)).toBeInTheDocument();
+  });
+
+  it('前に選んだ声が見つからないときは、その旨を表示して別の端末内の声を使う', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceURI: 'com.apple.voice.compact.ja-JP.Otoya' }));
+    synth.voiceList = [{ name: 'Kyoko', lang: 'ja-JP', localService: true, voiceURI: 'k', default: false } as SpeechSynthesisVoice];
+    render(<App />);
+    openSettings();
+    expect(within(dialog()).getByText(/前に選んだ声がこの端末で見つからない/)).toBeInTheDocument();
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'ためしにきく' }));
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
   });
 });
