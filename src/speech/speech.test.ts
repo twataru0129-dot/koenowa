@@ -1,5 +1,5 @@
-import { FakeSynth, FakeUtterance, fakeVoice } from '../test/fakeSpeech';
-import { pickVoice, listJapaneseVoices, Speaker, toSpeechText } from './speech';
+import { FakeSynth, FakeUtterance, fakeVoice, IOS_JA_VOICES } from '../test/fakeSpeech';
+import { pickVoice, listJapaneseVoices, Speaker, toSpeechText, voiceGender, voiceQuality } from './speech';
 
 const opts = { rate: 0.95, voiceURI: null, allowOnlineVoices: false };
 
@@ -90,5 +90,81 @@ describe('読み上げ', () => {
   it('音声に対応していない環境ではエラーを返す', () => {
     const speaker = new Speaker(null, null);
     expect(speaker.speak('はい', opts)).toEqual({ ok: false, reason: 'unsupported' });
+  });
+});
+
+describe('声の性別と品質', () => {
+  it('名前が既知の声だけ男女に分け、知らない名前は分類しない', () => {
+    expect(voiceGender('Otoya')).toBe('male');
+    expect(voiceGender('Otoya（拡張）')).toBe('male');
+    expect(voiceGender('Hattori (Enhanced)')).toBe('male');
+    expect(voiceGender('Kyoko')).toBe('female');
+    expect(voiceGender('O-ren')).toBe('female');
+    expect(voiceGender('Microsoft Ichiro - Japanese (Japan)')).toBe('male');
+    expect(voiceGender('Microsoft Haruka - Japanese (Japan)')).toBe('female');
+    expect(voiceGender('Google 日本語')).toBe('unknown');
+    expect(voiceGender('ja-jp-x-htm-local')).toBe('unknown');
+    // 名前の一部に含まれているだけでは判断しない
+    expect(voiceGender('Kyokoko')).toBe('unknown');
+  });
+
+  it('プレミアム・拡張・標準・旧式の合成音を区別する', () => {
+    expect(voiceQuality({ name: 'Kyoko', voiceURI: 'com.apple.voice.premium.ja-JP.Kyoko' })).toBe('premium');
+    expect(voiceQuality({ name: 'Kyoko（拡張）', voiceURI: 'x' })).toBe('enhanced');
+    expect(voiceQuality({ name: 'Otoya', voiceURI: 'com.apple.voice.enhanced.ja-JP.Otoya' })).toBe('enhanced');
+    expect(voiceQuality({ name: 'Otoya', voiceURI: 'com.apple.voice.compact.ja-JP.Otoya' })).toBe('standard');
+    expect(voiceQuality({ name: 'Reed', voiceURI: 'com.apple.eloquence.ja-JP.Reed' })).toBe('retro');
+  });
+
+  it('取得できた日本語の声をすべて並べ、高品質な声を上にする（重複は1つにまとめる）', () => {
+    const list = listJapaneseVoices([...IOS_JA_VOICES, IOS_JA_VOICES[2]]);
+    expect(list.map((v) => v.name)).toEqual([
+      'Kyoko（拡張）',
+      'Otoya（拡張）',
+      'Hattori',
+      'Kyoko',
+      'O-ren',
+      'Otoya',
+      'Reed',
+    ]);
+    expect(list.find((v) => v.name === 'Otoya')).toMatchObject({ gender: 'male', quality: 'standard', local: true });
+  });
+
+  it('男性の声を選ぶと、その声で話す（声の高さは変えない）', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    speaker.speak('はい', { ...opts, voiceURI: 'com.apple.voice.compact.ja-JP.Otoya' });
+    expect(synth.spoken[0].voice?.name).toBe('Otoya');
+    expect(synth.spoken[0].pitch).toBe(1);
+    speaker.speak('はい', { ...opts, voiceURI: 'com.apple.voice.compact.ja-JP.Kyoko' });
+    expect(synth.spoken[1].voice?.name).toBe('Kyoko');
+    expect(synth.spoken[1].pitch).toBe(1);
+  });
+});
+
+describe('読み上げ用の文字列', () => {
+  it.each(['ねる', 'ありがとう', 'きょうはいいてんきです', 'といれにいきたい'])(
+    '「%s」は文面を変えずに、1回の発声で読み上げる',
+    (text) => {
+      const { synth, speaker } = make();
+      expect(toSpeechText(text)).toBe(text);
+      speaker.speak(text, opts);
+      expect(synth.spoken.map((u) => u.text)).toEqual([text]);
+    },
+  );
+
+  it('は→わ などの自動の読みかえはしない', () => {
+    expect(toSpeechText('こんにちは')).toBe('こんにちは');
+    expect(toSpeechText('がっこうへいく')).toBe('がっこうへいく');
+  });
+
+  it('空白は1つにまとめ、全角空白も半角にそろえる', () => {
+    expect(toSpeechText('きょうは　 いい  てんき')).toBe('きょうは いい てんき');
+  });
+
+  it('記号だけの文章は話さない', () => {
+    const { synth, speaker } = make();
+    expect(speaker.speak('。', opts)).toEqual({ ok: false, reason: 'empty' });
+    expect(speaker.speak('、、\n・', opts)).toEqual({ ok: false, reason: 'empty' });
+    expect(synth.spoken).toHaveLength(0);
   });
 });

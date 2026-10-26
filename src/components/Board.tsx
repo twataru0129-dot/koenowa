@@ -9,7 +9,8 @@ export const SWIPE_MIN_PX = 50;
 
 interface Props {
   page: number;
-  onPageChange: (page: number) => void;
+  /** 1 で次のページ、-1 で前のページ（端では反対側へ循環する） */
+  onStep: (delta: -1 | 1) => void;
   onInput: (text: string, keyId: string) => void;
   /** ページ切り替えの向き（アニメーション用） */
   direction: -1 | 0 | 1;
@@ -35,7 +36,7 @@ function keyLabel(key: KeyDef): string {
   return '';
 }
 
-export function Board({ page, onPageChange, onInput, direction }: Props) {
+export function Board({ page, onStep, onInput, direction }: Props) {
   const current = PAGES[page];
   const gesture = useRef<Gesture | null>(null);
   const finished = useRef<FinishedGesture | null>(null);
@@ -72,8 +73,7 @@ export function Board({ page, onPageChange, onInput, direction }: Props) {
     finished.current = { moved: g.moved, startKey: g.startKey, at: e.timeStamp };
     if (g.moved && Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.2) {
       // 左へスワイプ → 次のページ、右へスワイプ → 前のページ
-      const next = dx < 0 ? page + 1 : page - 1;
-      if (next >= 0 && next < PAGES.length) onPageChange(next);
+      onStep(dx < 0 ? 1 : -1);
     }
   };
 
@@ -169,19 +169,22 @@ export function Board({ page, onPageChange, onInput, direction }: Props) {
 
 interface PagerProps {
   page: number;
+  onStep: (delta: -1 | 1) => void;
   onPageChange: (page: number) => void;
 }
 
-export function Pager({ page, onPageChange }: PagerProps) {
+export function Pager({ page, onStep, onPageChange }: PagerProps) {
   const current = PAGES[page];
+  const prev = PAGES[(page - 1 + PAGES.length) % PAGES.length];
+  const next = PAGES[(page + 1) % PAGES.length];
   return (
     <nav className="pager" aria-label="文字盤のページ">
       <button
         type="button"
         className="pager-btn"
-        onClick={() => onPageChange(page - 1)}
-        disabled={page === 0}
+        onClick={() => onStep(-1)}
         aria-label="まえの文字盤"
+        title={`${prev.number} ${prev.shortTitle}へ`}
       >
         <Icon name="left" />
         <span className="pager-btn-label">まえ</span>
@@ -210,9 +213,9 @@ export function Pager({ page, onPageChange }: PagerProps) {
       <button
         type="button"
         className="pager-btn"
-        onClick={() => onPageChange(page + 1)}
-        disabled={page === PAGES.length - 1}
+        onClick={() => onStep(1)}
         aria-label="つぎの文字盤"
+        title={`${next.number} ${next.shortTitle}へ`}
       >
         <span className="pager-btn-label">つぎ</span>
         <Icon name="right" />

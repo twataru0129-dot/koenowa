@@ -155,6 +155,28 @@ test.describe('操作', () => {
     await expect(page.locator('[data-testid=text-display] .ch')).toHaveCount(0);
   });
 
+  test('なぞる方向に合わせてページが循環し、文字は入力されない', async ({ page }) => {
+    await page.goto('./');
+    const drag = async (dx: number) => {
+      const box = (await page.getByTestId('board').boundingBox())!;
+      const y = box.y + box.height / 2;
+      const x = box.x + box.width / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + dx / 2, y, { steps: 5 });
+      await page.mouse.move(x + dx, y, { steps: 5 });
+      await page.mouse.up();
+      await page.locator('.board-grid').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+      return (await page.getByRole('group', { name: /ページ目/ }).getAttribute('aria-label'))![0];
+    };
+    const left = [await drag(-200), await drag(-200), await drag(-200)];
+    expect(left).toEqual(['2', '3', '1']);
+    const right = [await drag(200), await drag(200), await drag(200)];
+    expect(right).toEqual(['3', '2', '1']);
+    await expect(page.locator('[data-testid=text-display] .ch')).toHaveCount(0);
+    await expectGrid(page, SEION);
+  });
+
   test('文章エリアをタップしてもキーボード入力欄が出ない（カーソルだけ動く）', async ({ page }) => {
     await page.goto('./');
     for (const ch of ['あ', 'い', 'う']) await page.getByRole('button', { name: ch, exact: true }).click();

@@ -1127,3 +1127,80 @@ button.key-smallkana::before {
   font-weight: 700;
   color: #b0607a;
 }
+
+/* 声の選択（男性・女性・性別不明でグループ分け） */
+.voice-group + .voice-group {
+  margin-top: 10px;
+}
+
+.voice-group h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: var(--ink-sub);
+}
+
+.voice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.voice-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  background: #fff;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+}
+
+.voice-item.is-on {
+  border-color: var(--blue);
+  background: var(--sky-pale);
+}
+
+.voice-choice {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  cursor: pointer;
+}
+
+.voice-choice input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--blue);
+}
+
+.voice-name {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.voice-meta {
+  font-size: 13px;
+  color: var(--ink-sub);
+}
+
+.voice-test {
+  flex: none;
+}
+
+.voice-guide {
+  padding: 10px 12px;
+  border: 2px solid #ecc5a0;
+  border-radius: 10px;
+  background: #fff8ef;
+}
+
+.voice-guide p {
+  margin: 6px 0 0;
+  font-size: 14px;
+}

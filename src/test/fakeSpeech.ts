@@ -14,9 +14,21 @@ export class FakeUtterance {
   }
 }
 
-export function fakeVoice(name: string, lang: string, localService: boolean): SpeechSynthesisVoice {
-  return { name, lang, localService, voiceURI: `uri:${name}`, default: false } as SpeechSynthesisVoice;
+export function fakeVoice(name: string, lang: string, localService: boolean, voiceURI = `uri:${name}`): SpeechSynthesisVoice {
+  return { name, lang, localService, voiceURI, default: false } as SpeechSynthesisVoice;
 }
+
+/** iOS で getVoices() が返す形に近い日本語の声（名前と voiceURI は Apple の命名規則にならう） */
+export const IOS_JA_VOICES = [
+  fakeVoice('Kyoko', 'ja-JP', true, 'com.apple.voice.compact.ja-JP.Kyoko'),
+  fakeVoice('Kyoko（拡張）', 'ja-JP', true, 'com.apple.voice.enhanced.ja-JP.Kyoko'),
+  fakeVoice('Otoya', 'ja-JP', true, 'com.apple.voice.compact.ja-JP.Otoya'),
+  fakeVoice('Otoya（拡張）', 'ja-JP', true, 'com.apple.voice.enhanced.ja-JP.Otoya'),
+  fakeVoice('O-ren', 'ja-JP', true, 'com.apple.voice.compact.ja-JP.O-ren'),
+  fakeVoice('Hattori', 'ja-JP', true, 'com.apple.voice.compact.ja-JP.Hattori'),
+  fakeVoice('Reed', 'ja-JP', true, 'com.apple.eloquence.ja-JP.Reed'),
+  fakeVoice('Samantha', 'en-US', true, 'com.apple.voice.compact.en-US.Samantha'),
+];
 
 export class FakeSynth {
   spoken: FakeUtterance[] = [];
