@@ -76,7 +76,15 @@ npm run test:e2e   # ブラウザーでの E2E テスト（Playwright / Chromium
 Service Worker と PWA は HTTPS（または localhost）でしか動きません。iPhone で試すには、次のどちらかを使います。
 
 1. **一時的に試す**：PC で `npm run build && npx vite preview --host` を実行し、同じ Wi-Fi の iPhone の Safari で表示された `http://<PCのIP>:4173/` を開きます。画面と操作は確認できますが、HTTP なのでオフライン機能は動きません
-2. **本番相当で試す**：`dist/` を HTTPS のホスティング（GitHub Pages など）に置きます。相対パスで出力しているので、サブパスでもそのまま動きます。※公開はまだしていません。公開先と公開範囲はご判断ください
+2. **本番相当で試す**：GitHub Pages の公開URL（下記）を iPhone の Safari で開きます
+
+## GitHub Pages での公開
+
+- 公開URL：https://twataru0129-dot.github.io/koenowa/
+- `main` に push（PR のマージを含む）すると、`.github/workflows/deploy.yml` が動きます。型チェック・Lint・単体テストが通ったときだけ、ビルドして公開します。Actions タブの「Deploy to GitHub Pages」から手動でも実行できます
+- 前提：リポジトリの Settings → Pages → Source が「GitHub Actions」になっていること
+- `vite.config.ts` の `base: './'` により、すべてのファイルを相対パスで参照します。そのため `/koenowa/` 配下でも、manifest・アイコン・Service Worker（スコープは `/koenowa/`）がそのまま動きます
+- 公開後に変更を反映すると、Service Worker が新しい版を読み込みます。新しい版は次に開いたときから使われます。入力中の文章・よくつかう言葉・設定は消えません
 
 ### ホーム画面に追加する
 
