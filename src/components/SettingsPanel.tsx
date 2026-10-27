@@ -31,7 +31,6 @@ interface Props {
   favorites: Favorite[];
   onRefreshVoices: () => void;
   getDiagnostics: () => VoiceDiagnostics;
-  onStop: () => void;
   storageOk: boolean;
   onClose: () => void;
 }
@@ -80,7 +79,6 @@ export function SettingsPanel({
   onSpeakSample,
   currentText,
   favorites,
-  onStop,
   onRefreshVoices,
   getDiagnostics,
   storageOk,
@@ -255,10 +253,6 @@ export function SettingsPanel({
             <Icon name="speak" />
             <span>ためしにきく</span>
           </button>
-          <button type="button" className="btn btn-secondary" onClick={onStop}>
-            <Icon name="stop" />
-            <span>とめる</span>
-          </button>
         </div>
         <p className="settings-hint">ためしにきく・試聴：「{TEST_TEXT}」（いま選んでいるはやさで読みます）</p>
 
@@ -328,7 +322,6 @@ export function SettingsPanel({
         currentText={currentText}
         favorites={favorites}
         onSpeakSample={onSpeakSample}
-        onStop={onStop}
       />
 
       <VoiceDiagnosticsSection
@@ -436,14 +429,12 @@ function SpeechCompareSection({
   currentText,
   favorites,
   onSpeakSample,
-  onStop,
 }: {
   settings: Settings;
   onChange: (s: Settings) => void;
   currentText: string;
   favorites: Favorite[];
   onSpeakSample: (text: string, style: SpeechStyle) => SpeakResult;
-  onStop: () => void;
 }) {
   const options: { key: string; label: string; text: string; speechText?: string }[] = [
     ...(currentText.trim() ? [{ key: 'current', label: `いま入力中の文章：${oneLine(currentText)}`, text: currentText }] : []),
@@ -537,14 +528,8 @@ function SpeechCompareSection({
                 </li>
               )}
             </ul>
-            <div className="settings-buttons">
-              <button type="button" className="btn btn-secondary" onClick={onStop}>
-                <Icon name="stop" />
-                <span>とめる</span>
-              </button>
-            </div>
             <p className="settings-hint">
-              いま選んでいる声と速さで読みます。読み上げ用テキストは「よくつかう言葉」の「へんしゅう」→「読み方」で設定できます。
+              いま選んでいる声と速さで読みます。別の試聴ボタンを押すと、前の読み上げを止めてから読みます。読み上げ用テキストは「よくつかう言葉」の「へんしゅう」→「読み方」で設定できます。
             </p>
           </>
         )}

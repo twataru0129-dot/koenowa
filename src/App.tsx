@@ -145,10 +145,6 @@ export default function App() {
             <Icon name="speak" />
             <span>はっせい</span>
           </button>
-          <button type="button" className={`act act-stop ${speaking ? 'is-active' : ''}`} onClick={stop}>
-            <Icon name="stop" />
-            <span>とめる</span>
-          </button>
           <button
             type="button"
             className="act act-back"
@@ -239,7 +235,6 @@ export default function App() {
           onSpeakSample={(text, style) => doSpeak(text, { style })}
           currentText={editor.text}
           favorites={favorites}
-          onStop={stop}
           storageOk={storageOk}
           onClose={() => setPanel('none')}
         />

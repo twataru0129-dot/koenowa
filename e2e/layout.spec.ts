@@ -74,9 +74,24 @@ async function expectAllVisible(page: Page) {
   }));
   expect(scroll.sh, 'ページ全体が縦にスクロールしない').toBeLessThanOrEqual(vp.height);
   expect(scroll.sw, 'ページ全体が横にスクロールしない').toBeLessThanOrEqual(vp.width);
-  for (const name of ['はっせい', '1文字けす', 'ぜんぶけす', 'もどす', 'とめる', 'よくつかう']) {
+  for (const name of ['はっせい', '1文字けす', 'ぜんぶけす', 'もどす', 'よくつかう']) {
     await expect(page.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 });
   }
+  await expect(page.getByRole('button', { name: 'とめる', exact: true })).toHaveCount(0);
+  // 左右のページ切り替えボタン：同じ大きさで、画面内にあり、ページ名・点と重ならない
+  const pager = await page.evaluate(() => {
+    const r = (el: Element | null) => el!.getBoundingClientRect();
+    const [prev, next] = [...document.querySelectorAll('.pager-btn')].map((e) => e.getBoundingClientRect());
+    return { prev, next, center: r(document.querySelector('.pager-center')) };
+  });
+  expect(pager.prev.width).toBeCloseTo(pager.next.width, 0);
+  expect(pager.prev.height).toBeCloseTo(pager.next.height, 0);
+  expect(pager.prev.height, 'ページ切り替えボタンの高さ').toBeGreaterThanOrEqual(vp.height <= 560 && vp.width > vp.height ? 40 : 52);
+  expect(pager.prev.width).toBeGreaterThanOrEqual(52);
+  expect(pager.prev.right).toBeLessThanOrEqual(pager.center.left);
+  expect(pager.next.left).toBeGreaterThanOrEqual(pager.center.right);
+  expect(pager.next.right).toBeLessThanOrEqual(vp.width);
+  expect(pager.next.bottom).toBeLessThanOrEqual(vp.height);
   await expect(page.getByTestId('text-display')).toBeInViewport({ ratio: 1 });
 }
 
@@ -359,6 +374,41 @@ test.describe('読み上げの調整の画面', () => {
       await noOverflow();
       await fav.getByRole('button', { name: 'ほぞん' }).click();
       await expect(fav.getByText('読み上げ：はい。')).toBeVisible();
+      await ctx.close();
+    });
+  }
+});
+
+test.describe('ページ切り替えボタン', () => {
+  for (const vp of [
+    { name: 'iPhone 14 縦', width: 390, height: 664 },
+    { name: 'iPhone 14 横', width: 844, height: 340 },
+    { name: 'iPad 横', width: 1180, height: 820 },
+  ]) {
+    test(`${vp.name}：左右のボタンで循環し、文字は入らず、文字盤の配列は変わらない`, async ({ browser }) => {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
+      const page = await ctx.newPage();
+      await page.goto('./');
+      const current = async () => {
+        await page.locator('.board-grid').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+        return (await page.getByRole('group', { name: /ページ目/ }).getAttribute('aria-label'))![0];
+      };
+      const next = page.getByRole('button', { name: 'つぎの文字盤' });
+      const prev = page.getByRole('button', { name: 'まえの文字盤' });
+      const forward = [];
+      for (let i = 0; i < 3; i++) {
+        await next.tap();
+        forward.push(await current());
+      }
+      expect(forward).toEqual(['2', '3', '1']);
+      const backward = [];
+      for (let i = 0; i < 3; i++) {
+        await prev.tap();
+        backward.push(await current());
+      }
+      expect(backward).toEqual(['3', '2', '1']);
+      await expect(page.locator('[data-testid=text-display] .ch')).toHaveCount(0);
+      await expectGrid(page, SEION);
       await ctx.close();
     });
   }
