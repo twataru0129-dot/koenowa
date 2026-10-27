@@ -1,6 +1,14 @@
 import { useState } from 'react';
-import { RATE_OPTIONS, type Settings } from '../state/storage';
-import type { SpeakResult, VoiceDiagnostics, VoiceGender, VoiceInfo, VoiceQuality } from '../speech/speech';
+import { RATE_MAX, RATE_MIN, RATE_OPTIONS, type Favorite, type Settings } from '../state/storage';
+import {
+  toSpeechText,
+  type SpeakResult,
+  type SpeechStyle,
+  type VoiceDiagnostics,
+  type VoiceGender,
+  type VoiceInfo,
+  type VoiceQuality,
+} from '../speech/speech';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 
@@ -12,8 +20,15 @@ interface Props {
   /** 端末の標準音声（自動）を使ってよい環境か */
   systemVoiceOk: boolean;
   speechSupported: boolean;
-  /** 試聴する。'system' は端末の標準音声、文字列はその voiceURI の声、undefined はいま選んでいる声 */
-  onTest: (voice?: 'system' | string) => SpeakResult;
+  /**
+   * 試聴する。voice：'system' は端末の標準音声、文字列はその voiceURI の声、undefined はいま選んでいる声。
+   * rate：指定したときだけ、その速さで読む（設定は変えない）
+   */
+  onTest: (voice?: 'system' | string, rate?: number) => SpeakResult;
+  /** 比較用：いま選んでいる声と速さで、指定した読み上げ方式で読む */
+  onSpeakSample: (text: string, style: SpeechStyle) => SpeakResult;
+  currentText: string;
+  favorites: Favorite[];
   onRefreshVoices: () => void;
   getDiagnostics: () => VoiceDiagnostics;
   onStop: () => void;
@@ -62,6 +77,9 @@ export function SettingsPanel({
   systemVoiceOk,
   speechSupported,
   onTest,
+  onSpeakSample,
+  currentText,
+  favorites,
   onStop,
   onRefreshVoices,
   getDiagnostics,
@@ -208,19 +226,23 @@ export function SettingsPanel({
         <fieldset className="field">
           <legend>はやさ</legend>
           <div className="segmented">
-            {RATE_OPTIONS.map((r) => (
-              <label key={r.id} className={settings.rate === r.id ? 'is-on' : ''}>
-                <input
-                  type="radio"
-                  name="rate"
-                  value={r.id}
-                  checked={settings.rate === r.id}
-                  onChange={() => onChange({ ...settings, rate: r.id })}
-                />
-                {r.label}
-              </label>
-            ))}
+            {RATE_OPTIONS.map((r) => {
+              const on = settings.rateValue === null && settings.rate === r.id;
+              return (
+                <label key={r.id} className={on ? 'is-on' : ''}>
+                  <input
+                    type="radio"
+                    name="rate"
+                    value={r.id}
+                    checked={on}
+                    onChange={() => onChange({ ...settings, rate: r.id, rateValue: null })}
+                  />
+                  {r.label}
+                </label>
+              );
+            })}
           </div>
+          <FineRate settings={settings} onChange={onChange} onTest={(rate) => onTest(undefined, rate)} />
         </fieldset>
 
         <div className="settings-buttons">
@@ -300,12 +322,234 @@ export function SettingsPanel({
         </ul>
       </section>
 
+      <SpeechCompareSection
+        settings={settings}
+        onChange={onChange}
+        currentText={currentText}
+        favorites={favorites}
+        onSpeakSample={onSpeakSample}
+        onStop={onStop}
+      />
+
       <VoiceDiagnosticsSection
         allowOnline={settings.allowOnlineVoices}
         getDiagnostics={getDiagnostics}
         onRefresh={onRefreshVoices}
       />
     </Modal>
+  );
+}
+
+const RATE_PRESET_STEPS = [0.85, 0.9, 0.95, 1.0, 1.05];
+
+/** 速さのこまかい調整（試験的）。ゆっくり／ふつう／はやめは、そのまま使える */
+function FineRate({
+  settings,
+  onChange,
+  onTest,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+  onTest: (rate: number) => void;
+}) {
+  const preset = RATE_OPTIONS.find((r) => r.id === settings.rate)?.rate ?? 0.95;
+  const value = settings.rateValue ?? preset;
+  const set = (v: number) => onChange({ ...settings, rateValue: Math.round(v * 100) / 100 });
+  return (
+    <details className="fine-rate" open={settings.rateValue !== null}>
+      <summary>こまかく調整（試験的）</summary>
+      <p className="settings-hint">
+        自然に聞こえる速さは声によってちがいます。下のボタンで聞き比べて、聞き取りやすい速さを選んでください（ボタンは試聴だけで、設定は変わりません）。
+      </p>
+      <div className="rate-steps">
+        {RATE_PRESET_STEPS.map((r) => (
+          <button
+            key={r}
+            type="button"
+            className="btn btn-secondary"
+            aria-label={`はやさ ${r.toFixed(2)} で試聴`}
+            onClick={() => onTest(r)}
+          >
+            {r.toFixed(2)}
+          </button>
+        ))}
+      </div>
+      <label className="rate-slider">
+        <span>はやさ（{RATE_MIN}〜{RATE_MAX}）</span>
+        <input
+          type="range"
+          min={RATE_MIN}
+          max={RATE_MAX}
+          step={0.05}
+          value={value}
+          aria-label="はやさをこまかく調整"
+          aria-valuetext={value.toFixed(2)}
+          onChange={(e) => set(Number(e.target.value))}
+        />
+        <output>{value.toFixed(2)}</output>
+      </label>
+      <div className="settings-buttons">
+        <button type="button" className="btn btn-secondary" onClick={() => onTest(value)}>
+          <Icon name="speak" />
+          <span>このはやさで試聴</span>
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={settings.rateValue === null}
+          onClick={() => onChange({ ...settings, rateValue: null })}
+        >
+          ゆっくり／ふつう／はやめ に戻す
+        </button>
+      </div>
+      {settings.rateValue !== null && (
+        <p className="settings-hint">いまは、こまかく調整した速さ（{settings.rateValue.toFixed(2)}）で読みます。</p>
+      )}
+    </details>
+  );
+}
+
+/** 比較用の文（ひらがなだけ・句読点あり／なし・改行あり） */
+const SAMPLE_TEXTS = [
+  'こんにちは',
+  'ありがとうございます',
+  'きょうはいいてんきです',
+  'といれにいきたい',
+  'もういちどおねがいします',
+  'だいじょうぶ？',
+  'だいじょうぶ。',
+  'あめがふっています',
+  'きょうは いい てんき です',
+  'おはよう\nきょうは がっこうに いきます\nまたね',
+  'すこしまってください、いま かんがえています',
+];
+
+const oneLine = (t: string) => t.replace(/\n/g, '／');
+
+/**
+ * 読み上げの比較（試験的）。従来の方式・調整あり・読み上げ用テキストを聞き比べ、
+ * よいと感じたほうを「読み上げ方式」として選べる。いつでも従来の方式に戻せる。
+ */
+function SpeechCompareSection({
+  settings,
+  onChange,
+  currentText,
+  favorites,
+  onSpeakSample,
+  onStop,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+  currentText: string;
+  favorites: Favorite[];
+  onSpeakSample: (text: string, style: SpeechStyle) => SpeakResult;
+  onStop: () => void;
+}) {
+  const options: { key: string; label: string; text: string; speechText?: string }[] = [
+    ...(currentText.trim() ? [{ key: 'current', label: `いま入力中の文章：${oneLine(currentText)}`, text: currentText }] : []),
+    ...SAMPLE_TEXTS.map((t, i) => ({ key: `sample-${i}`, label: `例文：${oneLine(t)}`, text: t })),
+    ...favorites.map((f) => ({
+      key: `fav-${f.id}`,
+      label: `よくつかう言葉：${oneLine(f.text)}${f.speechText ? '（読み上げ用テキストあり）' : ''}`,
+      text: f.text,
+      speechText: f.speechText,
+    })),
+  ];
+  const [key, setKey] = useState(options[0]?.key ?? '');
+  const selected = options.find((o) => o.key === key) ?? options[0];
+  const speechText = selected?.speechText;
+
+  return (
+    <section className="settings-section" aria-labelledby="set-compare">
+      <details className="diag">
+        <summary id="set-compare">読み上げの比較（試験的）</summary>
+
+        <fieldset className="field">
+          <legend>読み上げ方式</legend>
+          <div className="segmented">
+            {(
+              [
+                ['plain', '従来（標準）'],
+                ['adjusted', '調整あり（試験的）'],
+              ] as const
+            ).map(([id, label]) => (
+              <label key={id} className={settings.speechStyle === id ? 'is-on' : ''}>
+                <input
+                  type="radio"
+                  name="speech-style"
+                  checked={settings.speechStyle === id}
+                  onChange={() => onChange({ ...settings, speechStyle: id })}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <small className="settings-hint">
+            「調整あり」は、読み上げ用の文字列の中だけで、①空白を「、」に、②句読点のない文の終わりに「。」を足し、③同じ句読点の連続を1つにまとめます。画面の文章は変わりません。かなを漢字にしたり、読みを変えたりはしません。聞き比べてよくなかったら「従来（標準）」に戻してください。
+          </small>
+        </fieldset>
+
+        {selected && (
+          <>
+            <label className="field">
+              <span>比べる文章</span>
+              <select value={selected.key} onChange={(e) => setKey(e.target.value)}>
+                {options.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ul className="compare-list">
+              <li>
+                <span className="compare-label">従来</span>
+                <code data-testid="compare-plain">{toSpeechText(selected.text, 'plain')}</code>
+                <button type="button" className="btn btn-secondary" onClick={() => onSpeakSample(selected.text, 'plain')}>
+                  <Icon name="speak" />
+                  <span>従来で試聴</span>
+                </button>
+              </li>
+              <li>
+                <span className="compare-label">調整あり</span>
+                <code data-testid="compare-adjusted">{toSpeechText(selected.text, 'adjusted')}</code>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => onSpeakSample(selected.text, 'adjusted')}
+                >
+                  <Icon name="speak" />
+                  <span>調整ありで試聴</span>
+                </button>
+              </li>
+              {speechText && (
+                <li>
+                  <span className="compare-label">読み上げ用テキスト</span>
+                  <code data-testid="compare-speech-text">{toSpeechText(speechText, settings.speechStyle)}</code>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => onSpeakSample(speechText, settings.speechStyle)}
+                  >
+                    <Icon name="speak" />
+                    <span>読み上げ用テキストで試聴</span>
+                  </button>
+                </li>
+              )}
+            </ul>
+            <div className="settings-buttons">
+              <button type="button" className="btn btn-secondary" onClick={onStop}>
+                <Icon name="stop" />
+                <span>とめる</span>
+              </button>
+            </div>
+            <p className="settings-hint">
+              いま選んでいる声と速さで読みます。読み上げ用テキストは「よくつかう言葉」の「へんしゅう」→「読み方」で設定できます。
+            </p>
+          </>
+        )}
+      </details>
+    </section>
   );
 }
 

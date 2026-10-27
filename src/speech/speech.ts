@@ -29,14 +29,49 @@ export type SpeakResult =
 const SENTENCE_END = /[。．.！!？?、，,]$/;
 
 /**
- * 読み上げ用の文字列を作る。
- * 改行は文の区切りとして扱い、改行の前に句読点がなければ「。」を補う（読み上げ用のみ）。
+ * 読み上げ方式。
+ * - 'plain'：従来の方式（既定）
+ * - 'adjusted'：句読点と間を調整する試験的な方式。実機で聞き比べて、よいほうを選んでもらう
  */
-export function toSpeechText(text: string): string {
-  const lines = text
+export type SpeechStyle = 'plain' | 'adjusted';
+
+/** 文の終わりとみなす記号（閉じかっこで終わる文も、それ以上は補わない） */
+const FINAL_MARK = /[。．.！!？?」』）)]$/;
+
+function splitLines(text: string): string[] {
+  return text
     .split(/\r?\n/)
     .map((line) => line.replace(/[ \u3000]+/g, ' ').trim())
     .filter((line) => line.length > 0);
+}
+
+/**
+ * 句読点と間を調整する（'adjusted' のときだけ使う。いずれも読み上げ用の文字列の中だけの変更）
+ * - 語と語のあいだの空白 → 「、」（利用者が空白で区切った位置に短い間を入れる）
+ * - 同じ句読点の連続（「。。」「、、」）→ 1つ
+ * - 行末の「、」→「。」、句読点のない行末 →「。」（文の終わりとして読ませる）
+ * 文字の追加はこの3つだけで、かなを漢字にしたり、読みを変えたりはしない。
+ */
+function adjustLine(line: string): string {
+  let out = line
+    .replace(/ *([、。，．,.！!？?」』）)]) */g, '$1') // 記号の前後の空白は取る
+    .replace(/ *([「『（(]) */g, '$1')
+    .replace(/ +/g, '、')
+    .replace(/([、。！？])\1+/g, '$1')
+    .replace(/、+([。！？])/g, '$1');
+  if (out.endsWith('、')) out = `${out.slice(0, -1)}。`;
+  if (!FINAL_MARK.test(out)) out = `${out}。`;
+  return out;
+}
+
+/**
+ * 読み上げ用の文字列を作る。画面に表示している文章は変えない。
+ * 改行は文の区切りとして扱い、改行の前に句読点がなければ「。」を補う。
+ * 文章全体を1つの文字列にまとめ、1回の発声で読む（文ごとに分けて発声しない）。
+ */
+export function toSpeechText(text: string, style: SpeechStyle = 'plain'): string {
+  const lines = splitLines(text);
+  if (style === 'adjusted') return lines.map(adjustLine).join('');
   return lines
     .map((line, i) => (i < lines.length - 1 && !SENTENCE_END.test(line) ? `${line}。` : line))
     .join('');
@@ -165,6 +200,8 @@ export interface SpeakOptions {
   allowOnlineVoices: boolean;
   /** true のときは声を指定せず、lang = ja-JP だけで話す（端末の標準音声） */
   useSystemVoice?: boolean;
+  /** 読み上げ方式（省略時は従来の方式） */
+  style?: SpeechStyle;
 }
 
 /** 音声診断（入力した文章や個人情報は含めない） */
@@ -238,7 +275,7 @@ export class Speaker {
   }
 
   speak(text: string, options: SpeakOptions): SpeakResult {
-    const spoken = toSpeechText(text);
+    const spoken = toSpeechText(text, options.style);
     // 記号だけ（例：「。」「、、」）の文章は読み上げても無音か記号名になるので話さない
     if (!hasSpeakableText(spoken)) return { ok: false, reason: 'empty' };
     if (!this.synth || !this.Utterance) return { ok: false, reason: 'unsupported' };

@@ -56,5 +56,27 @@ describe('端末内保存', () => {
     localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'robot' }));
     expect(loadSettings().voiceMode).toBe('specific');
   });
+
+  it('速さのこまかい調整と読み上げ方式は、未設定なら従来どおり（プリセット・従来方式）', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'system', rate: 'slow' }));
+    expect(loadSettings()).toMatchObject({ voiceMode: 'system', rate: 'slow', rateValue: null, speechStyle: 'plain' });
+    saveSettings({ ...DEFAULT_SETTINGS, rateValue: 0.9, speechStyle: 'adjusted' });
+    expect(loadSettings()).toMatchObject({ rateValue: 0.9, speechStyle: 'adjusted' });
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ rateValue: 3, speechStyle: 'magic' }));
+    expect(loadSettings()).toMatchObject({ rateValue: null, speechStyle: 'plain' });
+  });
+
+  it('よく使う言葉の読み上げ用テキストを保存・復元し、以前のデータもそのまま読める', () => {
+    localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify([{ id: 'a', text: 'はい' }]));
+    expect(loadFavorites()).toEqual([{ id: 'a', text: 'はい' }]);
+    saveFavorites([
+      { id: 'a', text: 'きょうはいいてんきです', speechText: '今日はいい天気です。' },
+      { id: 'b', text: 'あめ', speechText: '  ' },
+    ]);
+    expect(loadFavorites()).toEqual([
+      { id: 'a', text: 'きょうはいいてんきです', speechText: '今日はいい天気です。' },
+      { id: 'b', text: 'あめ' },
+    ]);
+  });
 });
 

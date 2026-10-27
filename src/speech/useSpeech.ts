@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RATE_OPTIONS, type Settings } from '../state/storage';
-import { pickVoice, Speaker, systemVoiceAllowed, type SpeakResult, type VoiceInfo } from './speech';
+import { pickVoice, Speaker, systemVoiceAllowed, type SpeakResult, type SpeechStyle, type VoiceInfo } from './speech';
 
 let sharedSpeaker: Speaker | null = null;
 
@@ -33,14 +33,17 @@ export function useSpeech(settings: Settings) {
     };
   }, [speaker]);
 
-  const rate = RATE_OPTIONS.find((r) => r.id === settings.rate)?.rate ?? 0.95;
+  const rate = settings.rateValue ?? RATE_OPTIONS.find((r) => r.id === settings.rate)?.rate ?? 0.95;
 
   /**
    * overrides.voice：試聴などで一時的に声を変える。
    * 'system' は端末の標準音声、文字列はその voiceURI の声。省略時は設定どおり。
    */
   const speak = useCallback(
-    (text: string, overrides?: { rate?: number; voice?: 'system' | string }): SpeakResult => {
+    (
+      text: string,
+      overrides?: { rate?: number; voice?: 'system' | string; style?: SpeechStyle },
+    ): SpeakResult => {
       const voice = overrides?.voice;
       const useSystemVoice = voice === undefined ? settings.voiceMode === 'system' : voice === 'system';
       return speaker.speak(text, {
@@ -48,9 +51,10 @@ export function useSpeech(settings: Settings) {
         voiceURI: voice !== undefined && voice !== 'system' ? voice : settings.voiceURI,
         allowOnlineVoices: settings.allowOnlineVoices,
         useSystemVoice,
+        style: overrides?.style ?? settings.speechStyle,
       });
     },
-    [speaker, rate, settings.voiceMode, settings.voiceURI, settings.allowOnlineVoices],
+    [speaker, rate, settings.voiceMode, settings.voiceURI, settings.allowOnlineVoices, settings.speechStyle],
   );
 
   const stop = useCallback(() => speaker.stop(), [speaker]);
@@ -61,6 +65,7 @@ export function useSpeech(settings: Settings) {
   const systemVoiceOk = systemVoiceAllowed(voices, settings.allowOnlineVoices);
 
   return {
+    rate,
     supported: speaker.supported,
     speaking,
     voices,

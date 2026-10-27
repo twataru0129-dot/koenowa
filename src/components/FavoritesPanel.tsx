@@ -13,6 +13,11 @@ interface Props {
   onClose: () => void;
 }
 
+/** 声に出す文章（読み上げ用テキストが設定されていればそれ、なければ表示している文章） */
+export function favoriteSpeech(f: Favorite): string {
+  return f.speechText?.trim() ? f.speechText : f.text;
+}
+
 /**
  * よくつかう言葉。
  * ふだんは「タップで発声」だけ。編集・削除・並べかえは「へんしゅう」に切り替えたときだけ出す。
@@ -23,6 +28,8 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
   const [draft, setDraft] = useState('');
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [readingId, setReadingId] = useState<string | null>(null);
+  const [readingText, setReadingText] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Favorite | null>(null);
   const [message, setMessage] = useState('');
 
@@ -47,6 +54,16 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
     setEditId(null);
   };
 
+  /** 読み上げ用テキストを保存する。空なら未設定に戻す（表示する文章は変えない） */
+  const saveReading = (id: string, value: string) => {
+    const t = value.trim();
+    onChange(
+      favorites.map((f) => (f.id !== id ? f : t ? { id: f.id, text: f.text, speechText: t } : { id: f.id, text: f.text })),
+    );
+    setReadingId(null);
+    setMessage(t ? '読み方を保存しました' : '元の発声に戻しました');
+  };
+
   const canAddCurrent = currentText.trim().length > 0;
 
   return (
@@ -62,6 +79,7 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
           onClick={() => {
             setEditing((v) => !v);
             setEditId(null);
+            setReadingId(null);
           }}
         >
           <Icon name="edit" />
@@ -85,7 +103,7 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
         </button>
       </div>
       <p className="fav-message" role="status">
-        {message || (editing ? '並べかえ・なおす・けすができます。' : 'タップすると、すぐに声に出します。')}
+        {message || (editing ? '並べかえ・なおす・読み方・けすができます。' : 'タップすると、すぐに声に出します。')}
       </p>
 
       {!editing && (
@@ -93,9 +111,10 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
           {favorites.length === 0 && <li className="fav-empty">まだ登録がありません。</li>}
           {favorites.map((f) => (
             <li key={f.id}>
-              <button type="button" className="fav-speak" onClick={() => onSpeak(f.text)}>
+              <button type="button" className="fav-speak" onClick={() => onSpeak(favoriteSpeech(f))}>
                 <Icon name="speak" />
                 <span className="fav-text">{f.text}</span>
+                {f.speechText && <span className="fav-reading-mark">読み方あり</span>}
               </button>
             </li>
           ))}
@@ -107,7 +126,60 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
           <ul className="fav-edit-list" aria-label="よくつかう言葉の編集">
             {favorites.map((f, i) => (
               <li key={f.id} className="fav-edit-row">
-                {editId === f.id ? (
+                {readingId === f.id ? (
+                  <form
+                    className="fav-reading-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      saveReading(f.id, readingText);
+                    }}
+                  >
+                    <p className="fav-reading-title">
+                      表示：<strong>{f.text}</strong>
+                    </p>
+                    <label htmlFor={`reading-${f.id}`}>
+                      読み上げ用テキスト（任意）：声に出すときだけ使います。漢字も使えます（例：今日はいい天気です。）。空にすると元の発声に戻ります。
+                    </label>
+                    <input
+                      id={`reading-${f.id}`}
+                      value={readingText}
+                      onChange={(e) => setReadingText(e.target.value)}
+                      placeholder={f.text}
+                      autoFocus
+                    />
+                    <div className="fav-reading-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={!readingText.trim()}
+                        onClick={() => onSpeak(readingText.trim())}
+                      >
+                        <Icon name="speak" />
+                        <span>読み方で試聴</span>
+                      </button>
+                      <button type="button" className="btn btn-secondary" onClick={() => onSpeak(f.text)}>
+                        <Icon name="speak" />
+                        <span>元の文章で試聴</span>
+                      </button>
+                    </div>
+                    <div className="fav-reading-actions">
+                      <button type="submit" className="btn btn-primary">
+                        ほぞん
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={!f.speechText}
+                        onClick={() => saveReading(f.id, '')}
+                      >
+                        元の発声に戻す
+                      </button>
+                      <button type="button" className="btn btn-secondary" onClick={() => setReadingId(null)}>
+                        やめる
+                      </button>
+                    </div>
+                  </form>
+                ) : editId === f.id ? (
                   <form
                     className="fav-edit-form"
                     onSubmit={(e) => {
@@ -130,7 +202,10 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
                   </form>
                 ) : (
                   <>
-                    <span className="fav-text">{f.text}</span>
+                    <span className="fav-text">
+                      {f.text}
+                      {f.speechText && <small className="fav-reading-preview">読み上げ：{f.speechText}</small>}
+                    </span>
                     <span className="fav-edit-actions">
                       <button
                         type="button"
@@ -155,12 +230,26 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
                         className="btn btn-secondary"
                         aria-label={`「${f.text}」をなおす`}
                         onClick={() => {
+                          setReadingId(null);
                           setEditId(f.id);
                           setEditText(f.text);
                         }}
                       >
                         <Icon name="edit" />
                         <span>なおす</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        aria-label={`「${f.text}」の読み方`}
+                        onClick={() => {
+                          setEditId(null);
+                          setReadingId(f.id);
+                          setReadingText(f.speechText ?? '');
+                        }}
+                      >
+                        <Icon name="speak" />
+                        <span>読み方</span>
                       </button>
                       <button
                         type="button"

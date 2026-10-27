@@ -229,3 +229,61 @@ describe('音声の診断', () => {
     expect(new Speaker(null, null).diagnostics()).toEqual({ supported: false, total: 0, japanese: 0, voices: [] });
   });
 });
+
+describe('読み上げ方式：従来と調整あり', () => {
+  const PHRASES = [
+    'こんにちは',
+    'ありがとうございます',
+    'きょうはいいてんきです',
+    'といれにいきたい',
+    'もういちどおねがいします',
+    'だいじょうぶ？',
+    'だいじょうぶ。',
+    'あめがふっています',
+  ];
+  const kanaOnly = (t: string) => t.replace(/[\s、。？！「」（）・]/g, '');
+
+  it.each(PHRASES)('「%s」：従来は文面のまま、調整ありは文末の記号だけを補い、かなは変えない', (text) => {
+    expect(toSpeechText(text, 'plain')).toBe(text);
+    const adjusted = toSpeechText(text, 'adjusted');
+    expect(kanaOnly(adjusted)).toBe(kanaOnly(text));
+    expect(adjusted).toBe(/[。？]$/.test(text) ? text : `${text}。`);
+  });
+
+  it('「だいじょうぶ？」と「だいじょうぶ。」の違い（問いかけと言い切り）を残す', () => {
+    expect(toSpeechText('だいじょうぶ？', 'adjusted')).toBe('だいじょうぶ？');
+    expect(toSpeechText('だいじょうぶ。', 'adjusted')).toBe('だいじょうぶ。');
+  });
+
+  it('句読点のない文・ある文・改行のある文を調整する', () => {
+    expect(toSpeechText('きょうは いい てんき です', 'adjusted')).toBe('きょうは、いい、てんき、です。');
+    expect(toSpeechText('はい、いいえ', 'adjusted')).toBe('はい、いいえ。');
+    expect(toSpeechText('はい。。', 'adjusted')).toBe('はい。');
+    expect(toSpeechText('すこし まって 、 ください', 'adjusted')).toBe('すこし、まって、ください。');
+    expect(toSpeechText('おはよう\ngakkou\n\nまたね', 'adjusted')).toBe('おはよう。gakkou。またね。');
+    expect(toSpeechText('はい、\nいいえ', 'adjusted')).toBe('はい。いいえ。');
+    expect(toSpeechText('「はい」', 'adjusted')).toBe('「はい」');
+    expect(toSpeechText('まって（ください）', 'adjusted')).toBe('まって（ください）');
+  });
+
+  it('従来の方式の結果は今までと同じ', () => {
+    expect(toSpeechText('おはよう\nげんき？\n\nまたね')).toBe('おはよう。げんき？またね');
+    expect(toSpeechText('きょうは いい てんき')).toBe('きょうは いい てんき');
+  });
+
+  it('調整ありでも1回の発声で読み、端末の標準音声（声の指定なし）を保つ', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    speaker.speak('おはよう\nきょうは いい てんき', { ...opts, useSystemVoice: true, style: 'adjusted' });
+    expect(synth.spoken).toHaveLength(1);
+    expect(synth.spoken[0]).toMatchObject({
+      text: 'おはよう。きょうは、いい、てんき。',
+      lang: 'ja-JP',
+      voice: null,
+      pitch: 1,
+    });
+    // 連続で押しても重ならない
+    speaker.speak('はい', { ...opts, useSystemVoice: true, style: 'adjusted' });
+    expect(synth.active).toHaveLength(1);
+    expect(synth.active[0].text).toBe('はい。');
+  });
+});
