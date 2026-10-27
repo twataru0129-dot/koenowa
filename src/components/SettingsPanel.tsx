@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { RATE_MAX, RATE_MIN, RATE_OPTIONS, type Favorite, type Settings } from '../state/storage';
+import { RATE_MAX, RATE_MIN, RATE_OPTIONS, type Favorite, type Settings, type SyllableSep } from '../state/storage';
 import {
+  buildSpeechText,
   toSpeechText,
+  type SyllableSeparator,
   type SpeakResult,
   type SpeechStyle,
   type VoiceDiagnostics,
@@ -10,7 +12,8 @@ import {
   type VoiceQuality,
 } from '../speech/speech';
 import { Icon } from './Icon';
-import { Modal } from './Modal';
+import { ConfirmDialog, Modal } from './Modal';
+import { AUTO_REGISTER_COUNT, LEARN_MAX_LENGTH } from '../state/learning';
 
 interface Props {
   settings: Settings;
@@ -27,8 +30,13 @@ interface Props {
   onTest: (voice?: 'system' | string, rate?: number) => SpeakResult;
   /** 比較用：いま選んでいる声と速さで、指定した読み上げ方式で読む */
   onSpeakSample: (text: string, style: SpeechStyle) => SpeakResult;
+  /** 「一音ずつはっきり」の比較用：区切り方と速さを指定して読む */
+  onSpeakSyllable: (text: string, syllable: SyllableSeparator | null, rate: number) => SpeakResult;
   currentText: string;
   favorites: Favorite[];
+  /** 自動登録のために回数を記録している言葉の数 */
+  learnedCount: number;
+  onClearLearning: () => void;
   onRefreshVoices: () => void;
   getDiagnostics: () => VoiceDiagnostics;
   storageOk: boolean;
@@ -77,8 +85,11 @@ export function SettingsPanel({
   speechSupported,
   onTest,
   onSpeakSample,
+  onSpeakSyllable,
   currentText,
   favorites,
+  learnedCount,
+  onClearLearning,
   onRefreshVoices,
   getDiagnostics,
   storageOk,
@@ -223,7 +234,7 @@ export function SettingsPanel({
 
         <fieldset className="field">
           <legend>はやさ</legend>
-          <div className="segmented">
+          <div className="segmented rate-grid">
             {RATE_OPTIONS.map((r) => {
               const on = settings.rateValue === null && settings.rate === r.id;
               return (
@@ -240,6 +251,7 @@ export function SettingsPanel({
               );
             })}
           </div>
+          <SyllableSection settings={settings} onChange={onChange} onSpeakSyllable={onSpeakSyllable} />
           <FineRate settings={settings} onChange={onChange} onTest={(rate) => onTest(undefined, rate)} />
         </fieldset>
 
@@ -302,6 +314,13 @@ export function SettingsPanel({
         </fieldset>
       </section>
 
+      <AutoFavoriteSection
+        settings={settings}
+        onChange={onChange}
+        learnedCount={learnedCount}
+        onClearLearning={onClearLearning}
+      />
+
       <section className="settings-section" aria-labelledby="set-data">
         <h3 id="set-data">データとプライバシー</h3>
         <ul className="settings-list">
@@ -330,6 +349,152 @@ export function SettingsPanel({
         onRefresh={onRefreshVoices}
       />
     </Modal>
+  );
+}
+
+/** よく使う言葉の自動登録（オン／オフと学習記録の消去） */
+function AutoFavoriteSection({
+  settings,
+  onChange,
+  learnedCount,
+  onClearLearning,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+  learnedCount: number;
+  onClearLearning: () => void;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const [message, setMessage] = useState('');
+  return (
+    <section className="settings-section" aria-labelledby="set-auto-fav">
+      <h3 id="set-auto-fav">よく使う言葉の自動登録</h3>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={settings.autoFavorite}
+          onChange={(e) => onChange({ ...settings, autoFavorite: e.target.checked })}
+        />
+        <span>
+          よく使う言葉を自動登録
+          <small>
+            文字盤で入力して「はっせい」した言葉が{AUTO_REGISTER_COUNT}回になると、「よくつかう」に追加します。
+            同じ入力のまま何度「はっせい」しても1回です。{LEARN_MAX_LENGTH}文字までの言葉が対象です。
+            「よくつかう」から消した言葉は、自動では登録しなおしません（手動で登録するか、下の学習記録を消去すると、また対象になります）。
+          </small>
+        </span>
+      </label>
+      <p className="settings-hint">回数を記録している言葉：{learnedCount}件（この端末の中だけに保存しています）</p>
+      <div className="settings-buttons">
+        <button type="button" className="btn btn-danger-outline" onClick={() => setConfirm(true)}>
+          自動登録の学習記録を消去
+        </button>
+        <span role="status" className="settings-hint">
+          {message}
+        </span>
+      </div>
+      {confirm && (
+        <ConfirmDialog
+          message="自動登録の学習記録を消去しますか？"
+          detail="言葉ごとの回数と、自動で登録しなおさない言葉の記録を消します。「よくつかう」に登録ずみの言葉は消えません。"
+          confirmLabel="消去する"
+          danger
+          onCancel={() => setConfirm(false)}
+          onConfirm={() => {
+            onClearLearning();
+            setConfirm(false);
+            setMessage('学習記録を消去しました');
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+/** 「とてもゆっくり」で比べる例文 */
+const SYLLABLE_SAMPLES = [
+  'ありがとう',
+  'こんにちは',
+  'おはよう',
+  'がっこう',
+  'きょうはいいてんきです',
+  'おみずをください',
+  'しゃしんをみせて',
+  'もういちどおねがいします',
+];
+
+const VERY_SLOW_RATE = RATE_OPTIONS.find((r) => r.id === 'veryslow')!.rate;
+
+/**
+ * 「一音ずつはっきり」（試験的）。「とてもゆっくり」のときだけ使う。初期値は「つかわない」。
+ * 区切った文字列はその場で表示し、それぞれ試聴して比べられる。
+ */
+function SyllableSection({
+  settings,
+  onChange,
+  onSpeakSyllable,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+  onSpeakSyllable: (text: string, syllable: SyllableSeparator | null, rate: number) => SpeakResult;
+}) {
+  const [sample, setSample] = useState(SYLLABLE_SAMPLES[0]);
+  const active = settings.rate === 'veryslow' && settings.rateValue === null;
+  const options: { id: SyllableSep; label: string; sep: SyllableSeparator | null }[] = [
+    { id: 'off', label: 'つかわない', sep: null },
+    { id: 'comma', label: '「、」で区切る', sep: 'comma' },
+    { id: 'space', label: '空白で区切る', sep: 'space' },
+  ];
+  return (
+    <details className="fine-rate" open={active && settings.syllableSep !== 'off'}>
+      <summary>一音ずつはっきり（試験的）</summary>
+      <p className="settings-hint">
+        「とてもゆっくり」のときに、「あ、り、が、と、う」のように音のまとまりごとに区切って読みます。「きょ」「しゃ」や小さい「っ」、のばす音「ー」、「ん」は前の音とまとめます。
+        漢字・カタカナをふくむ文や、「は」「へ」が言葉の途中にある文（例：こんにちは、きょうは）は、読み方が変わるおそれがあるため区切らずに読みます。画面の文章は変わりません。
+      </p>
+      {!active && <p className="settings-hint is-warning">いまは「とてもゆっくり」ではないため、この設定は使われません。</p>}
+      <div className="segmented">
+        {options.map((o) => (
+          <label key={o.id} className={settings.syllableSep === o.id ? 'is-on' : ''}>
+            <input
+              type="radio"
+              name="syllable"
+              checked={settings.syllableSep === o.id}
+              onChange={() => onChange({ ...settings, syllableSep: o.id })}
+            />
+            {o.label}
+          </label>
+        ))}
+      </div>
+      <label className="field">
+        <span>比べる言葉</span>
+        <select value={sample} onChange={(e) => setSample(e.target.value)}>
+          {SYLLABLE_SAMPLES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </label>
+      <ul className="compare-list">
+        {options.map((o) => (
+          <li key={o.id}>
+            <span className="compare-label">{o.label}</span>
+            <code data-testid={`syllable-${o.id}`}>{buildSpeechText(sample, settings.speechStyle, o.sep)}</code>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              aria-label={`${o.label}（とてもゆっくり）で試聴`}
+              onClick={() => onSpeakSyllable(sample, o.sep, VERY_SLOW_RATE)}
+            >
+              <Icon name="speak" />
+              <span>試聴</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="settings-hint">試聴は「とてもゆっくり」の速さ（{VERY_SLOW_RATE}）で読みます。区切れない言葉は、どれも同じ文字列になります。</p>
+    </details>
   );
 }
 

@@ -12,13 +12,16 @@ export const STORAGE_KEYS = {
   settings: 'koenowa.v1.settings',
 } as const;
 
-export type RateId = 'slow' | 'normal' | 'fast';
+export type RateId = 'veryslow' | 'slow' | 'normal' | 'fast';
 
 /** こまかく調整できる速さの範囲 */
-export const RATE_MIN = 0.6;
+export const RATE_MIN = 0.3;
 export const RATE_MAX = 1.2;
 
+/** 表示する順番もこの並び（とてもゆっくり → はやめ） */
 export const RATE_OPTIONS: { id: RateId; label: string; rate: number }[] = [
+  // 一音ずつ聞き取れるくらいの遅さ（iPhone での確認用の初期値）
+  { id: 'veryslow', label: 'とてもゆっくり', rate: 0.35 },
   // 0.75 では「ふつう」との差が感じにくかったため、iPhone での確認用に 0.6 へ下げた
   { id: 'slow', label: 'ゆっくり', rate: 0.6 },
   { id: 'normal', label: 'ふつう', rate: 0.95 },
@@ -32,22 +35,32 @@ export const RATE_OPTIONS: { id: RateId; label: string; rate: number }[] = [
  */
 export type VoiceMode = 'specific' | 'system';
 
+/**
+ * 「一音ずつはっきり」（試験的）。「とてもゆっくり」のときだけ使う。
+ * 'off'：使わない（既定）／'comma'：音のまとまりを「、」で区切る／'space'：空白で区切る
+ */
+export type SyllableSep = 'off' | 'comma' | 'space';
+
 export interface Settings {
   voiceMode: VoiceMode;
   /** 選んだ声の voiceURI（未選択なら自動）。'system' に切り替えても残し、戻したときに使う */
   voiceURI: string | null;
   rate: RateId;
   /**
-   * こまかく調整した速さ（0.6〜1.2）。null のときは rate（ゆっくり／ふつう／はやめ）を使う。
+   * こまかく調整した速さ（0.3〜1.2）。null のときは rate（とてもゆっくり〜はやめ）を使う。
    * 自然に聞こえる速さは声によって違うため、実機で聞きながら決めてもらう。
    */
   rateValue: number | null;
   /** 読み上げ方式。'plain' は従来の方式（既定）、'adjusted' は句読点と間を調整する試験的な方式 */
   speechStyle: SpeechStyle;
+  /** 「とてもゆっくり」のときに、音のまとまりごとに区切って読むか（試験的） */
+  syllableSep: SyllableSep;
   /** 端末内ではない（オンラインの）声の使用を許可するか。初期値は許可しない。 */
   allowOnlineVoices: boolean;
   /** 同じキーの連続入力を無視する時間（ミリ秒）。0 で無効。 */
   repeatGuardMs: number;
+  /** 入力して発声した回数が多い言葉を「よくつかう」に自動で登録するか（初期値はオン） */
+  autoFavorite: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -56,8 +69,10 @@ export const DEFAULT_SETTINGS: Settings = {
   rate: 'normal',
   rateValue: null,
   speechStyle: 'plain',
+  syllableSep: 'off',
   allowOnlineVoices: false,
   repeatGuardMs: 0,
+  autoFavorite: true,
 };
 
 export interface Draft {
@@ -76,6 +91,8 @@ export interface Favorite {
    * 未設定なら text をそのまま読む。
    */
   speechText?: string;
+  /** 自動登録された言葉（表示の区別にだけ使う） */
+  auto?: true;
 }
 
 export const DEFAULT_FAVORITES: string[] = [
@@ -150,6 +167,10 @@ export function loadSettings(): Settings {
       s.rateValue = Math.round(v.rateValue * 100) / 100;
     }
     if (v.speechStyle === 'plain' || v.speechStyle === 'adjusted') s.speechStyle = v.speechStyle;
+    if (v.syllableSep === 'off' || v.syllableSep === 'comma' || v.syllableSep === 'space') {
+      s.syllableSep = v.syllableSep;
+    }
+    if (typeof v.autoFavorite === 'boolean') s.autoFavorite = v.autoFavorite;
     if (typeof v.allowOnlineVoices === 'boolean') s.allowOnlineVoices = v.allowOnlineVoices;
     if (typeof v.repeatGuardMs === 'number' && v.repeatGuardMs >= 0 && v.repeatGuardMs <= 2000) {
       s.repeatGuardMs = v.repeatGuardMs;
@@ -171,11 +192,12 @@ export function loadFavorites(): Favorite[] {
   if (Array.isArray(v)) {
     return v
       .filter((f): f is Favorite => !!f && typeof f.id === 'string' && typeof f.text === 'string')
-      .map((f) =>
-        typeof f.speechText === 'string' && f.speechText.trim()
-          ? { id: f.id, text: f.text, speechText: f.speechText }
-          : { id: f.id, text: f.text },
-      );
+      .map((f) => {
+        const out: Favorite = { id: f.id, text: f.text };
+        if (typeof f.speechText === 'string' && f.speechText.trim()) out.speechText = f.speechText;
+        if (f.auto === true) out.auto = true;
+        return out;
+      });
   }
   // 初回だけ初期例を入れる（一度でも保存されていれば、空でもそのまま使う）
   return DEFAULT_FAVORITES.map((text) => ({ id: newId(), text }));

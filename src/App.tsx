@@ -7,13 +7,25 @@ import { SettingsPanel, TEST_TEXT } from './components/SettingsPanel';
 import { TextDisplay } from './components/TextDisplay';
 import { PAGES } from './data/boards';
 import { useSpeech } from './speech/useSpeech';
-import type { SpeakResult, SpeechStyle } from './speech/speech';
+import type { SpeakResult, SpeechStyle, SyllableSeparator } from './speech/speech';
 import { createEditorState, editorReducer } from './state/editor';
+import {
+  clearLearning,
+  countSpoken,
+  dismiss,
+  emptyLearning,
+  loadLearning,
+  normalizeLearnText,
+  saveLearning,
+  undismiss,
+  type LearningData,
+} from './state/learning';
 import {
   isStorageAvailable,
   loadDraft,
   loadFavorites,
   loadSettings,
+  newId,
   saveDraft,
   saveFavorites,
   saveSettings,
@@ -41,8 +53,18 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>('none');
   const [confirmClear, setConfirmClear] = useState(false);
   const [notice, setNotice] = useState('');
+  const [toast, setToast] = useState('');
   const [storageOk] = useState(isStorageAvailable);
   const lastKey = useRef<{ id: string; at: number } | null>(null);
+
+  // よくつかう言葉の自動登録：「文字盤で入力した」ことと「はっせいを押した」ことを分けて管理する
+  const [learning, setLearning] = useState<LearningData>(loadLearning);
+  /** 前回数えてから、文字盤で文字を入力したか */
+  const insertedSinceCount = useRef(false);
+  /** 前回数えてから、文章が一度でも空になったか（消して入力し直したか） */
+  const emptiedSinceCount = useRef(false);
+  /** 前回数えたときの文章。起動直後は、保存から戻した文章を「数えた状態」として扱う */
+  const lastCounted = useRef(normalizeLearnText(initial.text));
 
   const { supported, speaking, voices, activeVoice, systemVoiceOk, speak, stop, refreshVoices, diagnostics } =
     useSpeech(settings);
@@ -57,6 +79,17 @@ export default function App() {
   useEffect(() => {
     saveFavorites(favorites);
   }, [favorites]);
+  useEffect(() => {
+    saveLearning(learning);
+  }, [learning]);
+  useEffect(() => {
+    if (editor.text === '') emptiedSinceCount.current = true;
+  }, [editor.text]);
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(''), 4000);
+    return () => window.clearTimeout(t);
+  }, [toast]);
 
   useEffect(() => {
     if (!notice) return;
@@ -86,6 +119,7 @@ export default function App() {
       const guard = settings.repeatGuardMs;
       if (guard > 0 && lastKey.current && lastKey.current.id === keyId && now - lastKey.current.at < guard) return;
       lastKey.current = { id: keyId, at: now };
+      insertedSinceCount.current = true;
       dispatch({ type: 'insert', text });
     },
     [settings.repeatGuardMs],
@@ -95,11 +129,51 @@ export default function App() {
    * voice：'system' は端末の標準音声、文字列はその voiceURI の声。
    * style・rate：比較や試聴のときだけ一時的に変える。省略時はすべて設定どおり。
    */
-  const doSpeak = (text: string, overrides?: { voice?: 'system' | string; style?: SpeechStyle; rate?: number }) => {
+  const doSpeak = (
+    text: string,
+    overrides?: { voice?: 'system' | string; style?: SpeechStyle; rate?: number; syllable?: SyllableSeparator | null },
+  ) => {
     const result = speak(text, overrides);
     if (!result.ok) setNotice(SPEAK_ERRORS[result.reason]);
     else setNotice('');
     return result;
+  };
+
+  /**
+   * メイン画面の「はっせい」。
+   * 自動登録の回数は「前回数えてから文字盤で入力があり、しかも別の文章になったか、一度消して入力し直した」
+   * ときだけ1回数える。同じ入力のまま何度押しても数えない。
+   */
+  const speakMain = () => {
+    const result = doSpeak(editor.text);
+    if (!result.ok || !insertedSinceCount.current) return;
+    const key = normalizeLearnText(editor.text);
+    const fresh = key !== lastCounted.current || emptiedSinceCount.current;
+    insertedSinceCount.current = false;
+    emptiedSinceCount.current = false;
+    lastCounted.current = key;
+    if (!fresh || !settings.autoFavorite) return;
+    const already = favorites.some((f) => normalizeLearnText(f.text) === key);
+    const { data, register } = countSpoken(learning, key, already);
+    setLearning(data);
+    if (register) {
+      setFavorites((list) => [...list, { id: newId(), text: register, auto: true }]);
+      setToast(`『${register}』を よくつかう に とうろくしました`);
+    }
+  };
+
+  /**
+   * 「よくつかう」の変更。消された言葉は自動で登録し直さないように記録し、
+   * 手動で登録した言葉はその記録から外す。
+   */
+  const changeFavorites = (next: Favorite[]) => {
+    const nextIds = new Set(next.map((f) => f.id));
+    const prevIds = new Set(favorites.map((f) => f.id));
+    let data = learning;
+    for (const f of favorites) if (!nextIds.has(f.id)) data = dismiss(data, f.text);
+    for (const f of next) if (!prevIds.has(f.id)) data = undismiss(data, f.text);
+    if (data !== learning) setLearning(data);
+    setFavorites(next);
   };
 
   const hasText = editor.text.trim().length > 0;
@@ -133,13 +207,18 @@ export default function App() {
               {notice}
             </p>
           )}
+          {toast && (
+            <p className="toast" role="status">
+              {toast}
+            </p>
+          )}
         </div>
 
         <div className="actions" role="toolbar" aria-label="操作">
           <button
             type="button"
             className={`act act-speak ${speaking ? 'is-speaking' : ''}`}
-            onClick={() => doSpeak(editor.text)}
+            onClick={speakMain}
             disabled={!hasText}
           >
             <Icon name="speak" />
@@ -212,7 +291,7 @@ export default function App() {
       {panel === 'favorites' && (
         <FavoritesPanel
           favorites={favorites}
-          onChange={setFavorites}
+          onChange={changeFavorites}
           currentText={editor.text}
           onSpeak={(text) => doSpeak(text)}
           onStop={stop}
@@ -233,8 +312,14 @@ export default function App() {
           speechSupported={supported}
           onTest={(voice, rate) => doSpeak(TEST_TEXT, { voice, rate })}
           onSpeakSample={(text, style) => doSpeak(text, { style })}
+          onSpeakSyllable={(text, syllable, rate) => doSpeak(text, { syllable, rate })}
           currentText={editor.text}
           favorites={favorites}
+          learnedCount={Object.keys(learning.counts).length}
+          onClearLearning={() => {
+            clearLearning();
+            setLearning(emptyLearning());
+          }}
           storageOk={storageOk}
           onClose={() => setPanel('none')}
         />

@@ -1387,3 +1387,35 @@ button.key-smallkana::before {
   font-size: 16px;
   overflow-wrap: anywhere;
 }
+
+/* 自動登録のお知らせ（文字盤やボタンにかからないよう上に出し、タップは下へ通す） */
+.toast {
+  position: fixed;
+  z-index: 50;
+  left: 50%;
+  top: max(10px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(92vw, 560px);
+  margin: 0;
+  padding: 10px 16px;
+  border: 2px solid #9ccdb0;
+  border-radius: var(--radius);
+  background: var(--green-pale);
+  color: #1f5d3a;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.15);
+  pointer-events: none;
+}
+
+/* はやさ（4段階）は2列×2段で並べる */
+.segmented.rate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 440px;
+}
+
+.segmented.rate-grid label {
+  justify-content: flex-start;
+}

@@ -205,6 +205,7 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
                     <span className="fav-text">
                       {f.text}
                       {f.speechText && <small className="fav-reading-preview">読み上げ：{f.speechText}</small>}
+                      {f.auto && <small className="fav-reading-preview">自動で登録した言葉</small>}
                     </span>
                     <span className="fav-edit-actions">
                       <button
@@ -289,6 +290,8 @@ export function FavoritesPanel({ favorites, onChange, currentText, onSpeak, onSt
       {deleteTarget && (
         <ConfirmDialog
           message={`「${deleteTarget.text}」をけしますか？`}
+          detail="けした言葉は、自動では登録しなおしません。"
+
           confirmLabel="けす"
           danger
           onCancel={() => setDeleteTarget(null)}

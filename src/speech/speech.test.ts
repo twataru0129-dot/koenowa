@@ -1,5 +1,16 @@
 import { FakeSynth, FakeUtterance, fakeVoice, IOS_JA_VOICES } from '../test/fakeSpeech';
-import { pickVoice, listJapaneseVoices, Speaker, systemVoiceAllowed, toSpeechText, voiceGender, voiceQuality } from './speech';
+import {
+  buildSpeechText,
+  listJapaneseVoices,
+  pickVoice,
+  Speaker,
+  SYLLABLE_MAX_UNITS,
+  systemVoiceAllowed,
+  toSpeechText,
+  toSyllableText,
+  voiceGender,
+  voiceQuality,
+} from './speech';
 
 const opts = { rate: 0.95, voiceURI: null, allowOnlineVoices: false };
 
@@ -285,5 +296,49 @@ describe('読み上げ方式：従来と調整あり', () => {
     speaker.speak('はい', { ...opts, useSystemVoice: true, style: 'adjusted' });
     expect(synth.active).toHaveLength(1);
     expect(synth.active[0].text).toBe('はい。');
+  });
+});
+
+describe('とてもゆっくり：一音ずつはっきり（試験的）', () => {
+  it.each([
+    ['ありがとう', 'あ、り、が、と、う'],
+    ['がっこう', 'がっ、こ、う'],
+    ['おみずをください', 'お、み、ず、を、く、だ、さ、い'],
+    ['しゃしんをみせて', 'しゃ、しん、を、み、せ、て'],
+    ['もういちどおねがいします', 'も、う、い、ち、ど、お、ね、が、い、し、ま、す'],
+    ['きょう', 'きょ、う'],
+    ['すーぱー', 'すー、ぱー'],
+    ['だいじょうぶ？', 'だ、い、じょ、う、ぶ？'],
+  ])('「%s」→「%s」（拗音・促音・長音・ん は前の音とまとめる）', (text, expected) => {
+    expect(toSyllableText(text, 'comma')).toBe(expected);
+    expect(toSyllableText(text, 'space')).toBe(expected.replace(/、/g, ' '));
+  });
+
+  it.each(['こんにちは', 'おはよう', 'きょうはいいてんきです', 'がっこうへいく', '雨がふる', 'コップ', 'ょう', 'ーあ'])(
+    '「%s」は安全に区切れないので、区切らずに読む',
+    (text) => {
+      expect(toSyllableText(text, 'comma')).toBeNull();
+      expect(buildSpeechText(text, 'plain', 'comma')).toBe(toSpeechText(text));
+    },
+  );
+
+  it('長すぎる文は区切らない', () => {
+    expect(toSyllableText('あ'.repeat(SYLLABLE_MAX_UNITS), 'comma')).not.toBeNull();
+    expect(toSyllableText('あ'.repeat(SYLLABLE_MAX_UNITS + 1), 'comma')).toBeNull();
+  });
+
+  it('利用者の空白は区切りに、句読点はそのまま残す', () => {
+    expect(toSyllableText('きょう いく。またね', 'comma')).toBe('きょ、う、い、く。ま、た、ね');
+  });
+
+  it('区切った文章も1回の発声で読み、端末の標準音声を保ち、文字は増やさない', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    speaker.speak('ありがとう', { ...opts, rate: 0.35, useSystemVoice: true, syllable: 'comma' });
+    expect(synth.spoken).toHaveLength(1);
+    expect(synth.spoken[0]).toMatchObject({ text: 'あ、り、が、と、う', rate: 0.35, voice: null, lang: 'ja-JP', pitch: 1 });
+    expect(synth.spoken[0].text.replace(/、/g, '')).toBe('ありがとう');
+    speaker.speak('こんにちは', { ...opts, rate: 0.35, useSystemVoice: true, syllable: 'comma' });
+    expect(synth.active).toHaveLength(1);
+    expect(synth.active[0].text).toBe('こんにちは');
   });
 });

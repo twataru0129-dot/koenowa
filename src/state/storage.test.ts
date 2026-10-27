@@ -82,6 +82,7 @@ describe('端末内保存', () => {
 
   it('ゆっくり 0.6・ふつう 0.95・はやめ 1.15。以前「ゆっくり」を選んでいた人も 0.6 になる', () => {
     expect(RATE_OPTIONS.map((r) => [r.id, r.rate])).toEqual([
+      ['veryslow', 0.35],
       ['slow', 0.6],
       ['normal', 0.95],
       ['fast', 1.15],
