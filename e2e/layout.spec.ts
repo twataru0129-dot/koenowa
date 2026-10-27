@@ -308,3 +308,58 @@ test.describe('声の設定画面', () => {
     });
   }
 });
+
+test.describe('読み上げの調整の画面', () => {
+  for (const vp of [
+    { name: 'iPhone 14 縦', width: 390, height: 664 },
+    { name: 'iPhone 14 横', width: 844, height: 340 },
+  ]) {
+    test(`${vp.name}：速さの調整・比較・読み方の設定がはみ出さずに使える`, async ({ browser }, info) => {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
+      const page = await ctx.newPage();
+      await page.goto('./');
+      const noOverflow = async () => {
+        const o = await page.evaluate(() => {
+          const m = document.querySelector('.modal')!;
+          return { sw: document.documentElement.scrollWidth, mw: m.scrollWidth, cw: m.clientWidth };
+        });
+        expect(o.sw).toBeLessThanOrEqual(vp.width);
+        expect(o.mw).toBeLessThanOrEqual(o.cw);
+      };
+
+      await page.getByRole('button', { name: 'せってい' }).filter({ visible: true }).first().click();
+      const dialog = page.getByRole('dialog', { name: 'せってい' });
+      await dialog.getByText('こまかく調整（試験的）').click();
+      await expect(dialog.getByRole('slider', { name: 'はやさをこまかく調整' })).toBeVisible();
+      await dialog.getByRole('slider', { name: 'はやさをこまかく調整' }).fill('0.9');
+      await dialog.getByText('こまかく調整（試験的）').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath('fine-rate.png') });
+      await noOverflow();
+
+      await dialog.getByText('読み上げの比較（試験的）').click();
+      await dialog.getByRole('combobox', { name: '比べる文章' }).selectOption({ label: '例文：きょうは いい てんき です' });
+      await expect(dialog.getByTestId('compare-adjusted')).toHaveText('きょうは、いい、てんき、です。');
+      await dialog.getByRole('radio', { name: '調整あり（試験的）' }).check();
+      await dialog.getByTestId('compare-adjusted').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath('compare.png') });
+      await noOverflow();
+      await dialog.getByRole('button', { name: 'とじる' }).click();
+
+      // 再読み込みしても速さと読み上げ方式が残る
+      await page.reload();
+      const settings = await page.evaluate(() => JSON.parse(localStorage.getItem('koenowa.v1.settings')!));
+      expect(settings).toMatchObject({ rateValue: 0.9, speechStyle: 'adjusted' });
+
+      await page.getByRole('button', { name: 'よくつかう' }).click();
+      const fav = page.getByRole('dialog', { name: 'よくつかう言葉' });
+      await fav.getByRole('button', { name: 'へんしゅう' }).click();
+      await fav.getByRole('button', { name: '「はい」の読み方' }).click();
+      await fav.getByLabel(/読み上げ用テキスト（任意）/).fill('はい。');
+      await page.screenshot({ path: info.outputPath('reading.png') });
+      await noOverflow();
+      await fav.getByRole('button', { name: 'ほぞん' }).click();
+      await expect(fav.getByText('読み上げ：はい。')).toBeVisible();
+      await ctx.close();
+    });
+  }
+});

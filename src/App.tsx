@@ -7,7 +7,7 @@ import { SettingsPanel, TEST_TEXT } from './components/SettingsPanel';
 import { TextDisplay } from './components/TextDisplay';
 import { PAGES } from './data/boards';
 import { useSpeech } from './speech/useSpeech';
-import type { SpeakResult } from './speech/speech';
+import type { SpeakResult, SpeechStyle } from './speech/speech';
 import { createEditorState, editorReducer } from './state/editor';
 import {
   isStorageAvailable,
@@ -91,9 +91,12 @@ export default function App() {
     [settings.repeatGuardMs],
   );
 
-  /** voice：'system' は端末の標準音声、文字列はその voiceURI の声。省略時は設定どおり */
-  const doSpeak = (text: string, voice?: 'system' | string) => {
-    const result = speak(text, voice !== undefined ? { voice } : undefined);
+  /**
+   * voice：'system' は端末の標準音声、文字列はその voiceURI の声。
+   * style・rate：比較や試聴のときだけ一時的に変える。省略時はすべて設定どおり。
+   */
+  const doSpeak = (text: string, overrides?: { voice?: 'system' | string; style?: SpeechStyle; rate?: number }) => {
+    const result = speak(text, overrides);
     if (!result.ok) setNotice(SPEAK_ERRORS[result.reason]);
     else setNotice('');
     return result;
@@ -232,7 +235,10 @@ export default function App() {
           onRefreshVoices={refreshVoices}
           getDiagnostics={diagnostics}
           speechSupported={supported}
-          onTest={(voice) => doSpeak(TEST_TEXT, voice)}
+          onTest={(voice, rate) => doSpeak(TEST_TEXT, { voice, rate })}
+          onSpeakSample={(text, style) => doSpeak(text, { style })}
+          currentText={editor.text}
+          favorites={favorites}
           onStop={stop}
           storageOk={storageOk}
           onClose={() => setPanel('none')}

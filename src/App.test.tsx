@@ -515,3 +515,134 @@ describe('端末の標準音声（自動）と音声の診断', () => {
     expect(dialog().getByText('コピーしました')).toBeInTheDocument();
   });
 });
+
+describe('読み上げの自然さの調整', () => {
+  const openSettings = () => fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+  const settingsDialog = () => within(screen.getByRole('dialog', { name: 'せってい' }));
+  const favDialog = () => within(screen.getByRole('dialog', { name: 'よくつかう言葉' }));
+  const saved = (k: string) => JSON.parse(localStorage.getItem(k)!);
+  const openDetails = (summary: string) => {
+    const details = settingsDialog().getByText(summary).closest('details')!;
+    details.open = true;
+    fireEvent(details, new Event('toggle'));
+  };
+
+  it('よくつかう言葉に読み上げ用テキストを設定・試聴・保存でき、表示は変わらず、元の発声に戻せる', () => {
+    localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify([{ id: 'a', text: 'きょうはいいてんきです' }, { id: 'b', text: 'あめがふっています' }]));
+    const { unmount } = render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'よくつかう' }));
+    // 以前のデータ（読み上げ用テキストなし）は、そのまま表示の文章を読む
+    fireEvent.click(favDialog().getByRole('button', { name: 'あめがふっています' }));
+    expect(synth.spoken.at(-1)?.text).toBe('あめがふっています');
+
+    fireEvent.click(favDialog().getByRole('button', { name: 'へんしゅう' }));
+    fireEvent.click(favDialog().getByRole('button', { name: '「きょうはいいてんきです」の読み方' }));
+    const input = favDialog().getByLabelText(/読み上げ用テキスト（任意）/);
+    fireEvent.change(input, { target: { value: '今日はいい天気です。' } });
+    fireEvent.click(favDialog().getByRole('button', { name: '読み方で試聴' }));
+    expect(synth.spoken.at(-1)?.text).toBe('今日はいい天気です。');
+    fireEvent.click(favDialog().getByRole('button', { name: '元の文章で試聴' }));
+    expect(synth.spoken.at(-1)?.text).toBe('きょうはいいてんきです');
+    fireEvent.click(favDialog().getByRole('button', { name: 'ほぞん' }));
+    expect(saved(STORAGE_KEYS.favorites)[0]).toEqual({ id: 'a', text: 'きょうはいいてんきです', speechText: '今日はいい天気です。' });
+    expect(favDialog().getByText('読み上げ：今日はいい天気です。')).toBeInTheDocument();
+
+    // 再起動後も残り、タップで読み上げ用テキストを読む。表示は元の文章のまま
+    unmount();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'よくつかう' }));
+    const btn = favDialog().getByRole('button', { name: /きょうはいいてんきです/ });
+    expect(btn).toHaveTextContent('きょうはいいてんきです読み方あり');
+    fireEvent.click(btn);
+    expect(synth.spoken.at(-1)?.text).toBe('今日はいい天気です。');
+    expect(shown()).toBe('');
+
+    // 元の発声に戻す
+    fireEvent.click(favDialog().getByRole('button', { name: 'へんしゅう' }));
+    fireEvent.click(favDialog().getByRole('button', { name: '「きょうはいいてんきです」の読み方' }));
+    fireEvent.click(favDialog().getByRole('button', { name: '元の発声に戻す' }));
+    expect(saved(STORAGE_KEYS.favorites)[0]).toEqual({ id: 'a', text: 'きょうはいいてんきです' });
+    fireEvent.click(favDialog().getByRole('button', { name: 'へんしゅう中' }));
+    fireEvent.click(favDialog().getByRole('button', { name: 'きょうはいいてんきです' }));
+    expect(synth.spoken.at(-1)?.text).toBe('きょうはいいてんきです');
+  });
+
+  it('読み上げ方式は従来が既定。調整ありに切り替えても標準音声のまま話し、いつでも従来に戻せる', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'system' }));
+    render(<App />);
+    typeSeion('といれにいきたい');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'といれにいきたい', voice: null, lang: 'ja-JP' });
+
+    openSettings();
+    openDetails('読み上げの比較（試験的）');
+    expect(settingsDialog().getByRole('radio', { name: '従来（標準）' })).toBeChecked();
+    // 入力中の文章で比較できる。読み上げに渡す文字列を表示する
+    expect(screen.getByTestId('compare-plain')).toHaveTextContent('といれにいきたい');
+    expect(screen.getByTestId('compare-adjusted')).toHaveTextContent('といれにいきたい。');
+    fireEvent.click(settingsDialog().getByRole('button', { name: '従来で試聴' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'といれにいきたい', voice: null });
+    fireEvent.click(settingsDialog().getByRole('button', { name: '調整ありで試聴' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'といれにいきたい。', voice: null });
+    expect(synth.active).toHaveLength(1);
+    fireEvent.click(settingsDialog().getAllByRole('button', { name: 'とめる' }).at(-1)!);
+    expect(synth.active).toHaveLength(0);
+    expect(saved(STORAGE_KEYS.settings).speechStyle).toBe('plain');
+
+    fireEvent.click(settingsDialog().getByRole('radio', { name: '調整あり（試験的）' }));
+    expect(saved(STORAGE_KEYS.settings)).toMatchObject({ speechStyle: 'adjusted', voiceMode: 'system' });
+    fireEvent.click(settingsDialog().getByRole('button', { name: 'とじる' }));
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'といれにいきたい。', voice: null, lang: 'ja-JP', pitch: 1 });
+    expect(shown()).toBe('といれにいきたい');
+
+    openSettings();
+    openDetails('読み上げの比較（試験的）');
+    fireEvent.click(settingsDialog().getByRole('radio', { name: '従来（標準）' }));
+    fireEvent.click(settingsDialog().getByRole('button', { name: 'とじる' }));
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)?.text).toBe('といれにいきたい');
+  });
+
+  it('比較では、読み上げ用テキストを設定したよくつかう言葉も聞き比べられる', () => {
+    localStorage.setItem(
+      STORAGE_KEYS.favorites,
+      JSON.stringify([{ id: 'a', text: 'あめがふっています', speechText: '雨が降っています。' }]),
+    );
+    render(<App />);
+    openSettings();
+    openDetails('読み上げの比較（試験的）');
+    fireEvent.change(settingsDialog().getByRole('combobox', { name: '比べる文章' }), { target: { value: 'fav-a' } });
+    expect(screen.getByTestId('compare-speech-text')).toHaveTextContent('雨が降っています。');
+    fireEvent.click(settingsDialog().getByRole('button', { name: '読み上げ用テキストで試聴' }));
+    expect(synth.spoken.at(-1)?.text).toBe('雨が降っています。');
+    fireEvent.click(settingsDialog().getByRole('button', { name: '従来で試聴' }));
+    expect(synth.spoken.at(-1)?.text).toBe('あめがふっています');
+  });
+
+  it('速さをこまかく調整して保存でき、比較用の試聴では設定を変えず、プリセットに戻せる', () => {
+    const { unmount } = render(<App />);
+    openSettings();
+    fireEvent.click(settingsDialog().getByRole('button', { name: 'はやさ 0.85 で試聴' }));
+    expect(synth.spoken.at(-1)?.rate).toBe(0.85);
+    expect(saved(STORAGE_KEYS.settings).rateValue).toBeNull();
+
+    fireEvent.change(settingsDialog().getByRole('slider', { name: 'はやさをこまかく調整' }), { target: { value: '0.9' } });
+    expect(saved(STORAGE_KEYS.settings).rateValue).toBe(0.9);
+    expect(settingsDialog().getByRole('radio', { name: 'ふつう' })).not.toBeChecked();
+    fireEvent.click(settingsDialog().getByRole('button', { name: 'とじる' }));
+    unmount();
+    render(<App />);
+    typeSeion('はい');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)?.rate).toBe(0.9);
+
+    openSettings();
+    fireEvent.click(settingsDialog().getByRole('button', { name: 'ゆっくり／ふつう／はやめ に戻す' }));
+    expect(saved(STORAGE_KEYS.settings).rateValue).toBeNull();
+    expect(settingsDialog().getByRole('radio', { name: 'ふつう' })).toBeChecked();
+    fireEvent.click(settingsDialog().getByRole('radio', { name: 'ゆっくり' }));
+    fireEvent.click(settingsDialog().getByRole('button', { name: 'ためしにきく' }));
+    expect(synth.spoken.at(-1)?.rate).toBe(0.75);
+  });
+});
