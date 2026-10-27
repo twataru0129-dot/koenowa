@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RATE_OPTIONS, type Settings } from '../state/storage';
-import { pickVoice, Speaker, type SpeakResult, type VoiceInfo } from './speech';
+import { pickVoice, Speaker, systemVoiceAllowed, type SpeakResult, type VoiceInfo } from './speech';
 
 let sharedSpeaker: Speaker | null = null;
 
@@ -35,19 +35,40 @@ export function useSpeech(settings: Settings) {
 
   const rate = RATE_OPTIONS.find((r) => r.id === settings.rate)?.rate ?? 0.95;
 
+  /**
+   * overrides.voice：試聴などで一時的に声を変える。
+   * 'system' は端末の標準音声、文字列はその voiceURI の声。省略時は設定どおり。
+   */
   const speak = useCallback(
-    (text: string, overrides?: Partial<{ rate: number; voiceURI: string | null }>): SpeakResult =>
-      speaker.speak(text, {
+    (text: string, overrides?: { rate?: number; voice?: 'system' | string }): SpeakResult => {
+      const voice = overrides?.voice;
+      const useSystemVoice = voice === undefined ? settings.voiceMode === 'system' : voice === 'system';
+      return speaker.speak(text, {
         rate: overrides?.rate ?? rate,
-        voiceURI: overrides?.voiceURI !== undefined ? overrides.voiceURI : settings.voiceURI,
+        voiceURI: voice !== undefined && voice !== 'system' ? voice : settings.voiceURI,
         allowOnlineVoices: settings.allowOnlineVoices,
-      }),
-    [speaker, rate, settings.voiceURI, settings.allowOnlineVoices],
+        useSystemVoice,
+      });
+    },
+    [speaker, rate, settings.voiceMode, settings.voiceURI, settings.allowOnlineVoices],
   );
 
   const stop = useCallback(() => speaker.stop(), [speaker]);
+  const refreshVoices = useCallback(() => setVoices(speaker.voices()), [speaker]);
+  const diagnostics = useCallback(() => speaker.diagnostics(), [speaker]);
 
   const activeVoice = pickVoice(voices, settings.voiceURI, settings.allowOnlineVoices);
+  const systemVoiceOk = systemVoiceAllowed(voices, settings.allowOnlineVoices);
 
-  return { supported: speaker.supported, speaking, voices, activeVoice, speak, stop };
+  return {
+    supported: speaker.supported,
+    speaking,
+    voices,
+    activeVoice,
+    systemVoiceOk,
+    speak,
+    stop,
+    refreshVoices,
+    diagnostics,
+  };
 }

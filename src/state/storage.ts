@@ -18,8 +18,16 @@ export const RATE_OPTIONS: { id: RateId; label: string; rate: number }[] = [
   { id: 'fast', label: 'はやめ', rate: 1.15 },
 ];
 
+/**
+ * 声の選び方。
+ * - 'specific'：Web Speech API から取得できた声を指定する（voiceURI。null なら端末内の声から自動で選ぶ）
+ * - 'system'：声を指定せず lang = ja-JP だけで話す（端末の標準音声）
+ */
+export type VoiceMode = 'specific' | 'system';
+
 export interface Settings {
-  /** 選んだ声の voiceURI（未選択なら自動） */
+  voiceMode: VoiceMode;
+  /** 選んだ声の voiceURI（未選択なら自動）。'system' に切り替えても残し、戻したときに使う */
   voiceURI: string | null;
   rate: RateId;
   /** 端末内ではない（オンラインの）声の使用を許可するか。初期値は許可しない。 */
@@ -29,6 +37,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  voiceMode: 'specific',
   voiceURI: null,
   rate: 'normal',
   allowOnlineVoices: false,
@@ -110,6 +119,8 @@ export function loadSettings(): Settings {
   const v = read(STORAGE_KEYS.settings) as Partial<Settings> | undefined;
   const s = { ...DEFAULT_SETTINGS };
   if (v && typeof v === 'object') {
+    // voiceMode がない以前の設定は、これまでどおり声を指定するモードとして読む
+    if (v.voiceMode === 'system' || v.voiceMode === 'specific') s.voiceMode = v.voiceMode;
     if (typeof v.voiceURI === 'string' || v.voiceURI === null) s.voiceURI = v.voiceURI ?? null;
     if (RATE_OPTIONS.some((r) => r.id === v.rate)) s.rate = v.rate as RateId;
     if (typeof v.allowOnlineVoices === 'boolean') s.allowOnlineVoices = v.allowOnlineVoices;

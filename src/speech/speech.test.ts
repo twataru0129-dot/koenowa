@@ -1,5 +1,5 @@
 import { FakeSynth, FakeUtterance, fakeVoice, IOS_JA_VOICES } from '../test/fakeSpeech';
-import { pickVoice, listJapaneseVoices, Speaker, toSpeechText, voiceGender, voiceQuality } from './speech';
+import { pickVoice, listJapaneseVoices, Speaker, systemVoiceAllowed, toSpeechText, voiceGender, voiceQuality } from './speech';
 
 const opts = { rate: 0.95, voiceURI: null, allowOnlineVoices: false };
 
@@ -166,5 +166,66 @@ describe('読み上げ用の文字列', () => {
     expect(speaker.speak('。', opts)).toEqual({ ok: false, reason: 'empty' });
     expect(speaker.speak('、、\n・', opts)).toEqual({ ok: false, reason: 'empty' });
     expect(synth.spoken).toHaveLength(0);
+  });
+});
+
+describe('端末の標準音声（自動）', () => {
+  it('声を指定せず、lang = ja-JP だけで話す', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    expect(speaker.speak('ありがとう', { ...opts, useSystemVoice: true })).toEqual({ ok: true });
+    expect(synth.spoken[0]).toMatchObject({ text: 'ありがとう', lang: 'ja-JP', voice: null, pitch: 1 });
+  });
+
+  it('前の読み上げを止めてから話す（標準音声と指定した声を切り替えても重ならない）', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    speaker.speak('はい', { ...opts, useSystemVoice: true });
+    speaker.speak('はい', { ...opts, voiceURI: 'com.apple.voice.compact.ja-JP.Kyoko' });
+    expect(synth.active).toHaveLength(1);
+    expect(synth.active[0].voice?.name).toBe('Kyoko');
+  });
+
+  it('日本語のオンラインの声が一覧にあるときは、許可がなければ使わない', () => {
+    const online = fakeVoice('Google 日本語', 'ja-JP', false);
+    const { synth, speaker } = make([fakeVoice('Kyoko', 'ja-JP', true), online]);
+    expect(speaker.speak('はい', { ...opts, useSystemVoice: true })).toEqual({
+      ok: false,
+      reason: 'system-voice-may-be-online',
+    });
+    expect(synth.spoken).toHaveLength(0);
+    expect(speaker.speak('はい', { ...opts, useSystemVoice: true, allowOnlineVoices: true })).toEqual({ ok: true });
+    // 英語のオンラインの声は日本語の発声に関係しないので、制限しない
+    expect(systemVoiceAllowed(listJapaneseVoices([fakeVoice('Kyoko', 'ja-JP', true), fakeVoice('Google US', 'en-US', false)]), false)).toBe(true);
+  });
+
+  it('声の一覧が空でも、言語だけを指定して話せる', () => {
+    const { synth, speaker } = make([]);
+    expect(speaker.speak('はい', { ...opts, useSystemVoice: true })).toEqual({ ok: true });
+    expect(synth.spoken[0]).toMatchObject({ lang: 'ja-JP', voice: null });
+  });
+});
+
+describe('音声の診断', () => {
+  it('getVoices() の内容を加工せず、総数と日本語の件数を返す（日本語を先に並べる）', () => {
+    const dup = fakeVoice('Kyoko', 'ja-JP', true, 'same');
+    const { speaker } = make([
+      fakeVoice('Samantha', 'en-US', true),
+      dup,
+      dup,
+      fakeVoice('Otoya', 'ja-JP', true, 'same'),
+    ]);
+    const d = speaker.diagnostics();
+    expect(d).toMatchObject({ supported: true, total: 4, japanese: 3 });
+    expect(d.voices.map((v) => v.name)).toEqual(['Kyoko', 'Kyoko', 'Otoya', 'Samantha']);
+    expect(Object.keys(d.voices[0]).sort()).toEqual(['default', 'lang', 'localService', 'name', 'voiceURI']);
+  });
+
+  it('一覧ではまったく同じ声だけをまとめ、voiceURI が同じでも名前が違う声は残す', () => {
+    const dup = fakeVoice('Kyoko', 'ja-JP', true, 'same');
+    const list = listJapaneseVoices([dup, dup, fakeVoice('Otoya', 'ja-JP', true, 'same')]);
+    expect(list.map((v) => v.name).sort()).toEqual(['Kyoko', 'Otoya']);
+  });
+
+  it('音声に対応していない環境でも診断できる', () => {
+    expect(new Speaker(null, null).diagnostics()).toEqual({ supported: false, total: 0, japanese: 0, voices: [] });
   });
 });

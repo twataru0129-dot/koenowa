@@ -24,7 +24,7 @@ export interface VoiceInfo {
 
 export type SpeakResult =
   | { ok: true }
-  | { ok: false; reason: 'empty' | 'unsupported' | 'no-local-voice' };
+  | { ok: false; reason: 'empty' | 'unsupported' | 'no-local-voice' | 'system-voice-may-be-online' };
 
 const SENTENCE_END = /[。．.！!？?、，,]$/;
 
@@ -118,8 +118,9 @@ export function listJapaneseVoices(all: SpeechSynthesisVoice[]): VoiceInfo[] {
   return all
     .filter(isJapaneseVoice)
     .filter((voice) => {
-      // 同じ声が重複して返る環境があるため、voiceURI で1つにまとめる
-      const key = voice.voiceURI || voice.name;
+      // 同じ声がまったく同じ内容で重複して返る環境があるため、1つにまとめる
+      // （voiceURI だけで比べると、別の声を取りこぼすおそれがあるので名前と言語も比べる）
+      const key = `${voice.voiceURI}\u0000${voice.name}\u0000${voice.lang}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -148,10 +149,30 @@ export function pickVoice(
   return usable.find((v) => v.uri === preferredUri) ?? usable[0];
 }
 
+/**
+ * 「端末の標準音声（自動）」が使えるか。
+ * 声を指定しないとブラウザーが声を選ぶため、日本語のオンラインの声が一覧にある環境
+ * （例：PC 版 Chrome の「Google 日本語」）では、オンラインの声が選ばれて文章が外部へ送られるおそれがある。
+ * そのような環境では、オンラインの声を許可していない限り使わない。
+ */
+export function systemVoiceAllowed(voices: VoiceInfo[], allowOnline: boolean): boolean {
+  return allowOnline || voices.every((v) => v.local);
+}
+
 export interface SpeakOptions {
   rate: number;
   voiceURI: string | null;
   allowOnlineVoices: boolean;
+  /** true のときは声を指定せず、lang = ja-JP だけで話す（端末の標準音声） */
+  useSystemVoice?: boolean;
+}
+
+/** 音声診断（入力した文章や個人情報は含めない） */
+export interface VoiceDiagnostics {
+  supported: boolean;
+  total: number;
+  japanese: number;
+  voices: { name: string; lang: string; voiceURI: string; localService: boolean; default: boolean }[];
 }
 
 export interface SpeakerEvents {
@@ -196,14 +217,44 @@ export class Speaker {
     }
   }
 
+  /** getVoices() が返した声をそのまま一覧にする（日本語の声を先に並べる。並べ替え以外の加工はしない） */
+  diagnostics(): VoiceDiagnostics {
+    let all: SpeechSynthesisVoice[];
+    try {
+      all = this.synth ? this.synth.getVoices() : [];
+    } catch {
+      all = [];
+    }
+    const voices = all.map((v) => ({
+      name: v.name,
+      lang: v.lang,
+      voiceURI: v.voiceURI,
+      localService: v.localService,
+      default: v.default,
+    }));
+    const ja = voices.filter(isJapaneseVoice);
+    const others = voices.filter((v) => !isJapaneseVoice(v));
+    return { supported: this.supported, total: voices.length, japanese: ja.length, voices: [...ja, ...others] };
+  }
+
   speak(text: string, options: SpeakOptions): SpeakResult {
     const spoken = toSpeechText(text);
     // 記号だけ（例：「。」「、、」）の文章は読み上げても無音か記号名になるので話さない
     if (!hasSpeakableText(spoken)) return { ok: false, reason: 'empty' };
     if (!this.synth || !this.Utterance) return { ok: false, reason: 'unsupported' };
 
-    const voice = pickVoice(this.voices(), options.voiceURI, options.allowOnlineVoices);
-    if (voice === null) return { ok: false, reason: 'no-local-voice' };
+    const voices = this.voices();
+    let voice: VoiceInfo | null | undefined;
+    if (options.useSystemVoice) {
+      // 端末の標準音声：声は指定せず、言語だけを指定する。どの声になるかはブラウザー（OS）が決める
+      if (!systemVoiceAllowed(voices, options.allowOnlineVoices)) {
+        return { ok: false, reason: 'system-voice-may-be-online' };
+      }
+      voice = undefined;
+    } else {
+      voice = pickVoice(voices, options.voiceURI, options.allowOnlineVoices);
+      if (voice === null) return { ok: false, reason: 'no-local-voice' };
+    }
 
     // 前の読み上げが残っていれば止めてから話す（重複再生を防ぐ）
     this.stop();
