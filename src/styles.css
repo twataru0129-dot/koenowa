@@ -273,7 +273,7 @@ select {
   gap: var(--gap);
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-areas:
-    'speak speak stop'
+    'speak speak speak'
     'back undo redo'
     'clear fav fav';
 }
@@ -327,16 +327,6 @@ select {
 
 .act-speak.is-speaking {
   box-shadow: 0 0 0 4px #9cc4f5;
-}
-
-.act-stop {
-  grid-area: stop;
-}
-
-.act-stop.is-active {
-  background: var(--sky-pale);
-  border-color: var(--blue);
-  color: var(--blue-dark);
 }
 
 .act-back {
@@ -489,21 +479,26 @@ button.key.flash {
 
 /* ───────── ページ切り替え ───────── */
 .pager {
+  /* 左右のページ切り替えボタンの大きさ（画面の形ごとに下で決める） */
+  --pager-h: 56px;
+  --pager-w: 120px;
   grid-area: pager;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  min-height: 36px;
+  gap: 8px;
+  min-height: var(--pager-h);
 }
 
 .pager-btn {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  min-height: 36px;
-  min-width: 76px;
-  padding: 0 10px;
+  justify-content: center;
+  gap: 4px;
+  min-height: var(--pager-h);
+  min-width: var(--pager-w);
+  padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
@@ -514,6 +509,15 @@ button.key.flash {
 
 .pager-btn:disabled {
   opacity: 0.35;
+}
+
+.pager-btn .icon {
+  width: 1.6em;
+  height: 1.6em;
+}
+
+.pager-btn:active {
+  background: var(--sky-pale);
 }
 
 .pager-center {
@@ -579,13 +583,27 @@ button.key.flash {
     border-radius: 7px;
   }
 
+  /* 矢印だけの丸いボタン。画面の高さに応じて 52〜60px */
+  .pager {
+    --pager-h: clamp(52px, 7dvh, 60px);
+    --pager-w: var(--pager-h);
+  }
+
   .pager-btn-label {
     display: none;
   }
 
   .pager-btn {
-    min-width: 52px;
-    justify-content: center;
+    width: var(--pager-h);
+    height: var(--pager-h);
+    padding: 0;
+    border-radius: 50%;
+    font-size: 17px;
+  }
+
+  /* ボタンを大きくした分（以前は高さ36px）だけ文章エリアを低くして、文字盤のキーの大きさを保つ */
+  .text-display {
+    height: max(68px, calc(clamp(84px, 15dvh, 150px) - (clamp(52px, 7dvh, 60px) - 36px)));
   }
 }
 
@@ -609,18 +627,19 @@ button.key.flash {
       'pager actions';
   }
 
+  /* 高さが足りないため、ボタンは横に長くして押しやすくする（以前は高さ30px）。その分だけ文章エリアを低くする */
   .text-display {
-    height: clamp(46px, 17dvh, 84px);
+    height: max(40px, calc(clamp(46px, 17dvh, 84px) - 10px));
     font-size: 24px;
     padding: 4px 10px;
   }
 
   .actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: 2fr 1fr 1fr 1fr 0.75fr;
+    grid-template-rows: 2.4fr 1fr 1fr 1fr 0.75fr;
     grid-template-areas:
       'speak speak'
-      'stop fav'
+      'fav fav'
       'back clear'
       'undo redo'
       'settings settings';
@@ -653,10 +672,14 @@ button.key.flash {
   }
 
   .pager {
-    min-height: 30px;
+    --pager-h: 40px;
+    --pager-w: 92px;
   }
 
-  .pager-btn,
+  .pager-btn {
+    font-size: 16px;
+  }
+
   .dot {
     min-height: 30px;
     height: 30px;
@@ -679,15 +702,16 @@ button.key.flash {
     font-size: 24px;
   }
 
+  /* ページ切り替えボタンを大きくした分（以前は高さ36px）だけ文章エリアを低くして、キーの大きさを保つ */
   .text-display {
-    height: clamp(96px, 16dvh, 180px);
+    height: max(76px, calc(clamp(96px, 16dvh, 180px) - 20px));
     font-size: clamp(32px, 4.4vmin, 52px);
     padding: 10px 18px;
   }
 
   .actions {
-    grid-template-columns: 2.4fr repeat(6, minmax(0, 1fr));
-    grid-template-areas: 'speak stop back undo redo clear fav';
+    grid-template-columns: 3fr repeat(5, minmax(0, 1fr));
+    grid-template-areas: 'speak back undo redo clear fav';
   }
 
   .act {
@@ -717,7 +741,7 @@ button.key.flash {
   .actions {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-areas:
-      'speak speak stop fav'
+      'speak speak speak fav'
       'back undo redo clear';
   }
 

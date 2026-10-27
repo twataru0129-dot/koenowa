@@ -1,6 +1,7 @@
 import {
   DEFAULT_FAVORITES,
   DEFAULT_SETTINGS,
+  RATE_OPTIONS,
   loadDraft,
   loadFavorites,
   loadSettings,
@@ -77,6 +78,19 @@ describe('端末内保存', () => {
       { id: 'a', text: 'きょうはいいてんきです', speechText: '今日はいい天気です。' },
       { id: 'b', text: 'あめ' },
     ]);
+  });
+
+  it('ゆっくり 0.6・ふつう 0.95・はやめ 1.15。以前「ゆっくり」を選んでいた人も 0.6 になる', () => {
+    expect(RATE_OPTIONS.map((r) => [r.id, r.rate])).toEqual([
+      ['slow', 0.6],
+      ['normal', 0.95],
+      ['fast', 1.15],
+    ]);
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ rate: 'slow' }));
+    expect(loadSettings().rate).toBe('slow');
+    // こまかい調整の範囲は「ゆっくり」をふくむ
+    saveSettings({ ...DEFAULT_SETTINGS, rateValue: 0.6 });
+    expect(loadSettings().rateValue).toBe(0.6);
   });
 });
 

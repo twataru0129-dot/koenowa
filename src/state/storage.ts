@@ -15,11 +15,12 @@ export const STORAGE_KEYS = {
 export type RateId = 'slow' | 'normal' | 'fast';
 
 /** こまかく調整できる速さの範囲 */
-export const RATE_MIN = 0.7;
+export const RATE_MIN = 0.6;
 export const RATE_MAX = 1.2;
 
 export const RATE_OPTIONS: { id: RateId; label: string; rate: number }[] = [
-  { id: 'slow', label: 'ゆっくり', rate: 0.75 },
+  // 0.75 では「ふつう」との差が感じにくかったため、iPhone での確認用に 0.6 へ下げた
+  { id: 'slow', label: 'ゆっくり', rate: 0.6 },
   { id: 'normal', label: 'ふつう', rate: 0.95 },
   { id: 'fast', label: 'はやめ', rate: 1.15 },
 ];
@@ -37,7 +38,7 @@ export interface Settings {
   voiceURI: string | null;
   rate: RateId;
   /**
-   * こまかく調整した速さ（0.7〜1.2）。null のときは rate（ゆっくり／ふつう／はやめ）を使う。
+   * こまかく調整した速さ（0.6〜1.2）。null のときは rate（ゆっくり／ふつう／はやめ）を使う。
    * 自然に聞こえる速さは声によって違うため、実機で聞きながら決めてもらう。
    */
   rateValue: number | null;

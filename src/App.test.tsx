@@ -123,8 +123,22 @@ describe('こえのわ 画面', () => {
     expect(synth.spoken.map((u) => u.text)).toEqual(['はなしたい', 'はなしたい']);
     expect(synth.active).toHaveLength(1);
     expect(shown()).toBe('はなしたい');
-    fireEvent.click(screen.getByRole('button', { name: 'とめる' }));
-    expect(synth.active).toHaveLength(0);
+    // 2回目の「はっせい」は前の発声を止めてから読み直す
+    expect(synth.cancelCount).toBeGreaterThanOrEqual(1);
+    // 読み終わったあとも、もう一度発声できる
+    synth.finish();
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.active).toHaveLength(1);
+    expect(synth.spoken).toHaveLength(3);
+  });
+
+  it('メイン画面に「とめる」ボタンはない（停止は「はっせい」の押し直しで内部的に行う）', () => {
+    render(<App />);
+    expect(screen.queryByRole('button', { name: 'とめる' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'はっせい' })).toBeInTheDocument();
+    for (const name of ['1文字けす', 'もどす', 'やりなおす', 'ぜんぶけす', 'よくつかう']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
   });
 
   it('文章が空のときは発声ボタンを押せない', () => {
@@ -316,7 +330,7 @@ describe('音声の設定', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
     fireEvent.click(screen.getByRole('radio', { name: 'ゆっくり' }));
     fireEvent.click(screen.getByRole('button', { name: 'ためしにきく' }));
-    expect(synth.spoken.at(-1)?.rate).toBe(0.75);
+    expect(synth.spoken.at(-1)?.rate).toBe(0.6);
     expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!).rate).toBe('slow');
   });
 });
@@ -433,9 +447,9 @@ describe('端末の標準音声（自動）と音声の診断', () => {
     typeSeion('ねる');
     fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
     expect(synth.spoken.at(-1)).toMatchObject({ text: 'ねる', lang: 'ja-JP', voice: null });
-    fireEvent.click(screen.getByRole('button', { name: 'とめる' }));
-    expect(synth.active).toHaveLength(0);
+    const cancels = synth.cancelCount;
     fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.cancelCount).toBe(cancels + 1);
     expect(synth.spoken.at(-1)).toMatchObject({ text: 'ねる', voice: null });
     expect(synth.active).toHaveLength(1);
 
@@ -465,7 +479,7 @@ describe('端末の標準音声（自動）と音声の診断', () => {
     typeSeion('はい');
     fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
     expect(synth.spoken.at(-1)?.voice?.name).toBe('Otoya');
-    expect(synth.spoken.at(-1)?.rate).toBe(0.75);
+    expect(synth.spoken.at(-1)?.rate).toBe(0.6);
     openSettings();
     expect(dialog().getByRole('radio', { name: /端末の標準音声（自動）/ })).not.toBeChecked();
   });
@@ -585,8 +599,11 @@ describe('読み上げの自然さの調整', () => {
     fireEvent.click(settingsDialog().getByRole('button', { name: '調整ありで試聴' }));
     expect(synth.spoken.at(-1)).toMatchObject({ text: 'といれにいきたい。', voice: null });
     expect(synth.active).toHaveLength(1);
-    fireEvent.click(settingsDialog().getAllByRole('button', { name: 'とめる' }).at(-1)!);
-    expect(synth.active).toHaveLength(0);
+    // 比較の画面に「とめる」ボタンはない。別の試聴を押すと前の読み上げを止めてから読む
+    expect(settingsDialog().queryByRole('button', { name: 'とめる' })).not.toBeInTheDocument();
+    fireEvent.click(settingsDialog().getByRole('button', { name: '従来で試聴' }));
+    expect(synth.active).toHaveLength(1);
+    expect(synth.active[0].text).toBe('といれにいきたい');
     expect(saved(STORAGE_KEYS.settings).speechStyle).toBe('plain');
 
     fireEvent.click(settingsDialog().getByRole('radio', { name: '調整あり（試験的）' }));
@@ -643,6 +660,50 @@ describe('読み上げの自然さの調整', () => {
     expect(settingsDialog().getByRole('radio', { name: 'ふつう' })).toBeChecked();
     fireEvent.click(settingsDialog().getByRole('radio', { name: 'ゆっくり' }));
     fireEvent.click(settingsDialog().getByRole('button', { name: 'ためしにきく' }));
-    expect(synth.spoken.at(-1)?.rate).toBe(0.75);
+    expect(synth.spoken.at(-1)?.rate).toBe(0.6);
+  });
+});
+
+describe('はやさの設定', () => {
+  it('ゆっくりは 0.6、ふつう・はやめは従来どおり。端末の標準音声でも反映され、保存される', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'system' }));
+    const { unmount } = render(<App />);
+    typeSeion('はい');
+    const dialog = () => within(screen.getByRole('dialog', { name: 'せってい' }));
+    const expected: [string, number][] = [
+      ['ゆっくり', 0.6],
+      ['ふつう', 0.95],
+      ['はやめ', 1.15],
+    ];
+    for (const [label, rate] of expected) {
+      fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+      fireEvent.click(dialog().getByRole('radio', { name: label }));
+      // 「ためしにきく」の横に「とめる」はない
+      expect(dialog().queryByRole('button', { name: 'とめる' })).not.toBeInTheDocument();
+      fireEvent.click(dialog().getByRole('button', { name: 'ためしにきく' }));
+      expect(synth.spoken.at(-1)).toMatchObject({ text: 'こんにちは。こえのわです。', rate, voice: null, lang: 'ja-JP' });
+      fireEvent.click(dialog().getByRole('button', { name: 'とじる' }));
+      fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+      expect(synth.spoken.at(-1)).toMatchObject({ text: 'はい', rate, voice: null });
+      expect(synth.active).toHaveLength(1);
+    }
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    fireEvent.click(dialog().getByRole('radio', { name: 'ゆっくり' }));
+    unmount();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ rate: 0.6, voice: null });
+  });
+
+  it('よくつかう言葉の「とめる」と発声は、これまでどおり使える', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'よくつかう' }));
+    const fav = within(screen.getByRole('dialog', { name: 'よくつかう言葉' }));
+    fireEvent.click(fav.getByRole('button', { name: 'はい' }));
+    fireEvent.click(fav.getByRole('button', { name: 'いいえ' }));
+    expect(synth.active).toHaveLength(1);
+    expect(synth.active[0].text).toBe('いいえ');
+    fireEvent.click(fav.getByRole('button', { name: 'とめる' }));
+    expect(synth.active).toHaveLength(0);
   });
 });
