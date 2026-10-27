@@ -413,3 +413,67 @@ test.describe('ページ切り替えボタン', () => {
     });
   }
 });
+
+test.describe('自動登録ととてもゆっくり', () => {
+  for (const vp of [
+    { name: 'iPhone 14 縦', width: 390, height: 664 },
+    { name: 'iPhone 14 横', width: 844, height: 340 },
+  ]) {
+    test(`${vp.name}：はやさは2列×2段、一音ずつの設定がはみ出さない`, async ({ browser }, info) => {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
+      const page = await ctx.newPage();
+      await page.goto('./');
+      await page.getByRole('button', { name: 'せってい' }).filter({ visible: true }).first().click();
+      const dialog = page.getByRole('dialog', { name: 'せってい' });
+      await dialog.getByRole('radio', { name: 'とてもゆっくり' }).check();
+      const boxes = await dialog.locator('.rate-grid label').evaluateAll((els) =>
+        els.map((e) => {
+          const r = e.getBoundingClientRect();
+          return { x: Math.round(r.x), y: Math.round(r.y), w: r.width, text: e.textContent };
+        }),
+      );
+      expect(boxes.map((b) => b.text)).toEqual(['とてもゆっくり', 'ゆっくり', 'ふつう', 'はやめ']);
+      expect(new Set(boxes.map((b) => b.y)).size).toBe(2);
+      expect(new Set(boxes.map((b) => b.x)).size).toBe(2);
+      await dialog.getByText('一音ずつはっきり（試験的）').click();
+      await dialog.getByRole('radio', { name: '「、」で区切る' }).check();
+      await expect(dialog.getByTestId('syllable-comma')).toHaveText('あ、り、が、と、う');
+      await dialog.getByTestId('syllable-comma').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath('syllable.png') });
+      const o = await page.evaluate(() => {
+        const m = document.querySelector('.modal')!;
+        return { sw: document.documentElement.scrollWidth, mw: m.scrollWidth, cw: m.clientWidth };
+      });
+      expect(o.sw).toBeLessThanOrEqual(vp.width);
+      expect(o.mw).toBeLessThanOrEqual(o.cw);
+      await ctx.close();
+    });
+  }
+
+  test('iPhone 14 縦：10回入力して発声すると登録され、お知らせが出ても文字盤を押せる', async ({ browser }, info) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 664 }, hasTouch: true, isMobile: true });
+    const page = await ctx.newPage();
+    await page.goto('./');
+    const speak = page.getByRole('button', { name: 'はっせい' });
+    for (let i = 0; i < 10; i++) {
+      const clear = page.getByRole('button', { name: 'ぜんぶけす' });
+      if (await clear.isEnabled()) {
+        await clear.tap();
+        await page.getByRole('alertdialog').getByRole('button', { name: 'ぜんぶけす' }).tap();
+      }
+      for (const ch of ['ね', 'む', 'い']) await page.getByRole('button', { name: ch, exact: true }).tap();
+      await speak.tap();
+      await speak.tap(); // 連打しても数えない
+    }
+    const toast = page.getByText('『ねむい』を よくつかう に とうろくしました');
+    await expect(toast).toBeVisible();
+    await page.screenshot({ path: info.outputPath('toast.png') });
+    // お知らせの上からでも、その下の文字盤や文章エリアを押せる（タップを下へ通す）
+    expect(await toast.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
+    await page.getByRole('button', { name: 'あ', exact: true }).tap();
+    await expect(page.getByTestId('text-display')).toHaveText(/ねむいあ/);
+    const favs = await page.evaluate(() => JSON.parse(localStorage.getItem('koenowa.v1.favorites')!));
+    expect(favs.filter((f: { text: string }) => f.text === 'ねむい')).toHaveLength(1);
+    await ctx.close();
+  });
+});

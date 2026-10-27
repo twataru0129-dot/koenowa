@@ -77,6 +77,59 @@ export function toSpeechText(text: string, style: SpeechStyle = 'plain'): string
     .join('');
 }
 
+/** 「一音ずつはっきり」の区切り方 */
+export type SyllableSeparator = 'comma' | 'space';
+
+/** 前の音とまとめて読む文字（拗音・小さい母音、促音、長音、撥音） */
+const ATTACH_TO_PREV = new Set(['ゃ', 'ゅ', 'ょ', 'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ', 'ゎ', 'っ', 'ー', 'ん']);
+/** 区切りとして残す記号・空白・改行 */
+const DELIMITER = /([ 、。！？!?「」（）・\n]+)/;
+const DELIMITER_ONLY = /^[ 、。！？!?「」（）・\n]+$/;
+/** 一度に区切って読む音の数の上限（長い文は一音ずつにすると聞き取りにくいため） */
+export const SYLLABLE_MAX_UNITS = 24;
+
+/**
+ * 「一音ずつはっきり」の読み上げ用文字列を作る（試験的）。
+ * ひらがなを音のまとまりに分けて区切る：あ・り・が・と・う／きょ・う／がっ・こ・う／しゃ・しん。
+ * 拗音・促音・長音・「ん」は前の音とまとめ、単独では読ませない。
+ *
+ * 安全に区切れないときは null を返し、呼び出し側は通常の読み上げに戻す。
+ * - ひらがな以外（漢字・カタカナ・英数字）を含む
+ * - 語の途中に「は」「へ」がある（助詞の「わ」「え」と読むべきかを判断できず、区切ると読みが変わるおそれ）
+ * - 小さい文字・長音で始まる
+ * - 音の数が多すぎる
+ */
+export function toSyllableText(text: string, separator: SyllableSeparator): string | null {
+  const sep = separator === 'comma' ? '、' : ' ';
+  let units = 0;
+  const out: string[] = [];
+  for (const part of text.split(DELIMITER)) {
+    if (part === '') continue;
+    if (DELIMITER_ONLY.test(part)) {
+      // 空白だけの区切りは指定の区切りに、句読点などはそのまま残す
+      const trimmed = part.replace(/ /g, '');
+      out.push(trimmed === '' ? sep : trimmed);
+      continue;
+    }
+    if (!/^[\u3041-\u3096ー]+$/.test(part)) return null;
+    const chars = Array.from(part);
+    if (chars.slice(1).some((c) => c === 'は' || c === 'へ')) return null;
+    const morae: string[] = [];
+    for (const c of chars) {
+      if (ATTACH_TO_PREV.has(c)) {
+        if (morae.length === 0) {
+          if (c !== 'ん') return null;
+          morae.push(c);
+        } else morae[morae.length - 1] += c;
+      } else morae.push(c);
+    }
+    units += morae.length;
+    out.push(morae.join(sep));
+  }
+  if (units === 0 || units > SYLLABLE_MAX_UNITS) return null;
+  return out.join('');
+}
+
 /** 文字（かな・漢字・英字）または数字を1つ以上含むか */
 export function hasSpeakableText(text: string): boolean {
   return /[\p{L}\p{N}]/u.test(text);
@@ -202,6 +255,15 @@ export interface SpeakOptions {
   useSystemVoice?: boolean;
   /** 読み上げ方式（省略時は従来の方式） */
   style?: SpeechStyle;
+  /** 「一音ずつはっきり」（とてもゆっくりのときだけ）。安全に区切れない文章は通常どおり読む */
+  syllable?: SyllableSeparator | null;
+}
+
+/** 実際に音声エンジンへ渡す文字列（比較画面の表示にも使う） */
+export function buildSpeechText(text: string, style: SpeechStyle = 'plain', syllable?: SyllableSeparator | null): string {
+  const spoken = toSpeechText(text, style);
+  if (!syllable) return spoken;
+  return toSyllableText(spoken, syllable) ?? spoken;
 }
 
 /** 音声診断（入力した文章や個人情報は含めない） */
@@ -275,7 +337,7 @@ export class Speaker {
   }
 
   speak(text: string, options: SpeakOptions): SpeakResult {
-    const spoken = toSpeechText(text, options.style);
+    const spoken = buildSpeechText(text, options.style, options.syllable);
     // 記号だけ（例：「。」「、、」）の文章は読み上げても無音か記号名になるので話さない
     if (!hasSpeakableText(spoken)) return { ok: false, reason: 'empty' };
     if (!this.synth || !this.Utterance) return { ok: false, reason: 'unsupported' };

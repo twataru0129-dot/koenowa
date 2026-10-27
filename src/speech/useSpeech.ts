@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RATE_OPTIONS, type Settings } from '../state/storage';
-import { pickVoice, Speaker, systemVoiceAllowed, type SpeakResult, type SpeechStyle, type VoiceInfo } from './speech';
+import {
+  pickVoice,
+  Speaker,
+  systemVoiceAllowed,
+  type SpeakResult,
+  type SpeechStyle,
+  type SyllableSeparator,
+  type VoiceInfo,
+} from './speech';
 
 let sharedSpeaker: Speaker | null = null;
 
@@ -34,6 +42,11 @@ export function useSpeech(settings: Settings) {
   }, [speaker]);
 
   const rate = settings.rateValue ?? RATE_OPTIONS.find((r) => r.id === settings.rate)?.rate ?? 0.95;
+  /** 「一音ずつはっきり」は「とてもゆっくり」を選んでいるとき（こまかい調整をしていないとき）だけ使う */
+  const syllable: SyllableSeparator | null =
+    settings.rate === 'veryslow' && settings.rateValue === null && settings.syllableSep !== 'off'
+      ? settings.syllableSep
+      : null;
 
   /**
    * overrides.voice：試聴などで一時的に声を変える。
@@ -42,7 +55,13 @@ export function useSpeech(settings: Settings) {
   const speak = useCallback(
     (
       text: string,
-      overrides?: { rate?: number; voice?: 'system' | string; style?: SpeechStyle },
+      overrides?: {
+        rate?: number;
+        voice?: 'system' | string;
+        style?: SpeechStyle;
+        /** 比較の試聴用。null は区切らない、undefined は設定どおり */
+        syllable?: SyllableSeparator | null;
+      },
     ): SpeakResult => {
       const voice = overrides?.voice;
       const useSystemVoice = voice === undefined ? settings.voiceMode === 'system' : voice === 'system';
@@ -52,9 +71,10 @@ export function useSpeech(settings: Settings) {
         allowOnlineVoices: settings.allowOnlineVoices,
         useSystemVoice,
         style: overrides?.style ?? settings.speechStyle,
+        syllable: overrides?.syllable !== undefined ? overrides.syllable : syllable,
       });
     },
-    [speaker, rate, settings.voiceMode, settings.voiceURI, settings.allowOnlineVoices, settings.speechStyle],
+    [speaker, rate, syllable, settings.voiceMode, settings.voiceURI, settings.allowOnlineVoices, settings.speechStyle],
   );
 
   const stop = useCallback(() => speaker.stop(), [speaker]);
@@ -66,6 +86,7 @@ export function useSpeech(settings: Settings) {
 
   return {
     rate,
+    syllable,
     supported: speaker.supported,
     speaking,
     voices,

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import App from './App';
 import { Speaker } from './speech/speech';
 import { setSpeakerForTesting } from './speech/useSpeech';
+import { LEARNING_KEY } from './state/learning';
 import { STORAGE_KEYS } from './state/storage';
 import { FakeSynth, FakeUtterance, IOS_JA_VOICES } from './test/fakeSpeech';
 
@@ -252,7 +253,10 @@ describe('こえのわ 画面', () => {
     expect(shown()).toBe('はい');
     expect(screen.getByRole('group', { name: /2ページ目/ })).toBeInTheDocument();
     const keys = Object.keys(localStorage).sort();
-    expect(keys).toEqual([STORAGE_KEYS.draft, STORAGE_KEYS.favorites, STORAGE_KEYS.settings].sort());
+    // 自動登録の学習記録は「文章ごとの回数」だけで、日時や発声の一覧は持たない
+    expect(keys).toEqual([STORAGE_KEYS.draft, STORAGE_KEYS.favorites, STORAGE_KEYS.settings, LEARNING_KEY].sort());
+    // 「はい」は初期の「よくつかう」に入っているので、回数は数えない
+    expect(JSON.parse(localStorage.getItem(LEARNING_KEY)!)).toEqual({ version: 1, counts: {}, nextSeq: 1, dismissed: [] });
     expect(JSON.stringify(localStorage)).not.toMatch(/history|log/i);
   });
 });
@@ -705,5 +709,246 @@ describe('はやさの設定', () => {
     expect(synth.active[0].text).toBe('いいえ');
     fireEvent.click(fav.getByRole('button', { name: 'とめる' }));
     expect(synth.active).toHaveLength(0);
+  });
+});
+
+describe('よく使う言葉の自動登録', () => {
+  const learn = () => JSON.parse(localStorage.getItem(LEARNING_KEY) ?? '{"counts":{}}');
+  const count = (t: string) => learn().counts[t]?.count ?? 0;
+  const favs = () => JSON.parse(localStorage.getItem(STORAGE_KEYS.favorites)!) as { text: string; auto?: boolean; speechText?: string }[];
+  const speakBtn = () => screen.getByRole('button', { name: 'はっせい' });
+  const clearAll = () => {
+    const btn = screen.getByRole('button', { name: 'ぜんぶけす' });
+    if ((btn as HTMLButtonElement).disabled) return;
+    fireEvent.click(btn);
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'ぜんぶけす' }));
+  };
+  /** 文章を消して、入力し直して、発声する（1回分） */
+  const freshSpeak = (t = 'ねむい') => {
+    clearAll();
+    typeSeion(t);
+    fireEvent.click(speakBtn());
+  };
+
+  it('入力して発声すると1回。同じ入力のまま何度発声しても1回のまま', () => {
+    render(<App />);
+    freshSpeak();
+    expect(count('ねむい')).toBe(1);
+    for (let i = 0; i < 9; i++) fireEvent.click(speakBtn());
+    expect(count('ねむい')).toBe(1);
+    expect(synth.spoken).toHaveLength(10);
+  });
+
+  it('消して入力し直して発声すると増え、10回目で「よくつかう」に登録してお知らせを出す。二重登録はしない', () => {
+    render(<App />);
+    for (let i = 1; i <= 9; i++) {
+      freshSpeak();
+      expect(count('ねむい')).toBe(i);
+    }
+    expect(favs().some((f) => f.text === 'ねむい')).toBe(false);
+    freshSpeak();
+    expect(favs().filter((f) => f.text === 'ねむい')).toEqual([expect.objectContaining({ text: 'ねむい', auto: true })]);
+    expect(screen.getByText('『ねむい』を よくつかう に とうろくしました')).toBeInTheDocument();
+    expect(count('ねむい')).toBe(0);
+    for (let i = 0; i < 12; i++) freshSpeak();
+    expect(favs().filter((f) => f.text === 'ねむい')).toHaveLength(1);
+    // 既存の「よくつかう」も残っている
+    expect(favs()[0].text).toBe('はい');
+  });
+
+  it('入力しただけ・カーソル移動・元に戻す／やり直す・同じ文字の付け足しと削除では数えない', () => {
+    render(<App />);
+    typeSeion('ねむい');
+    expect(count('ねむい')).toBe(0);
+    fireEvent.click(speakBtn());
+    expect(count('ねむい')).toBe(1);
+    fireEvent.keyDown(screen.getByTestId('text-display'), { key: 'ArrowLeft' });
+    fireEvent.keyDown(screen.getByTestId('text-display'), { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('button', { name: 'もどす' }));
+    fireEvent.click(screen.getByRole('button', { name: 'やりなおす' }));
+    fireEvent.click(speakBtn());
+    tap(key('あ'));
+    fireEvent.click(screen.getByRole('button', { name: '1文字けす' }));
+    fireEvent.click(speakBtn());
+    expect(count('ねむい')).toBe(1);
+    // 別の文章に編集して入力すれば、その文章として数える
+    tap(key('な'));
+    fireEvent.click(speakBtn());
+    expect(count('ねむいな')).toBe(1);
+  });
+
+  it('よくつかう・試聴・比較・速さの変更からの発声は数えない', () => {
+    localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify([{ id: 'a', text: 'ねむい' }, { id: 'b', text: 'おなか' }]));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'よくつかう' }));
+    const fav = within(screen.getByRole('dialog', { name: 'よくつかう言葉' }));
+    for (let i = 0; i < 12; i++) fireEvent.click(fav.getByRole('button', { name: 'おなか' }));
+    fireEvent.click(fav.getByRole('button', { name: 'とじる' }));
+    typeSeion('おなか');
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    const set = within(screen.getByRole('dialog', { name: 'せってい' }));
+    fireEvent.click(set.getByRole('radio', { name: 'はやめ' }));
+    fireEvent.click(set.getByRole('button', { name: 'ためしにきく' }));
+    const details = set.getByText('読み上げの比較（試験的）').closest('details')!;
+    details.open = true;
+    fireEvent(details, new Event('toggle'));
+    fireEvent.click(set.getByRole('button', { name: '従来で試聴' }));
+    fireEvent.click(set.getByRole('button', { name: 'つかわない（とてもゆっくり）で試聴' }));
+    fireEvent.click(set.getByRole('button', { name: 'とじる' }));
+    expect(learn().counts).toEqual({});
+  });
+
+  it('手動で登録ずみの言葉は数えず、読み上げ用テキストも上書きしない', () => {
+    localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify([{ id: 'a', text: 'ねむい', speechText: '眠い。' }]));
+    render(<App />);
+    for (let i = 0; i < 12; i++) freshSpeak();
+    expect(favs()).toEqual([{ id: 'a', text: 'ねむい', speechText: '眠い。' }]);
+    expect(count('ねむい')).toBe(0);
+  });
+
+  it('再起動しても回数を引き継ぐ。保存から戻した文章をそのまま発声しても数えない', () => {
+    const { unmount } = render(<App />);
+    for (let i = 0; i < 3; i++) freshSpeak();
+    expect(count('ねむい')).toBe(3);
+    unmount();
+    render(<App />);
+    expect(shown()).toBe('ねむい');
+    fireEvent.click(speakBtn());
+    fireEvent.click(speakBtn());
+    expect(count('ねむい')).toBe(3);
+    freshSpeak();
+    expect(count('ねむい')).toBe(4);
+  });
+
+  it('自動登録をオフにすると数えない。オンに戻すと続きから数える', () => {
+    render(<App />);
+    freshSpeak();
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    const set = within(screen.getByRole('dialog', { name: 'せってい' }));
+    const toggle = set.getByRole('checkbox', { name: /よく使う言葉を自動登録/ });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!).autoFavorite).toBe(false);
+    fireEvent.click(set.getByRole('button', { name: 'とじる' }));
+    for (let i = 0; i < 12; i++) freshSpeak();
+    expect(count('ねむい')).toBe(1);
+    expect(favs().some((f) => f.text === 'ねむい')).toBe(false);
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'せってい' })).getByRole('checkbox', { name: /よく使う言葉を自動登録/ }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'せってい' })).getByRole('button', { name: 'とじる' }));
+    freshSpeak();
+    expect(count('ねむい')).toBe(2);
+  });
+
+  it('自動登録した言葉を消すと、勝手に登録しなおさない。手動で登録すれば元に戻る', () => {
+    render(<App />);
+    for (let i = 0; i < 10; i++) freshSpeak();
+    expect(favs().some((f) => f.text === 'ねむい' && f.auto)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'よくつかう' }));
+    const fav = () => within(screen.getByRole('dialog', { name: 'よくつかう言葉' }));
+    fireEvent.click(fav().getByRole('button', { name: 'へんしゅう' }));
+    expect(fav().getByText('自動で登録した言葉')).toBeInTheDocument();
+    fireEvent.click(fav().getByRole('button', { name: '「ねむい」をけす' }));
+    expect(screen.getByText('けした言葉は、自動では登録しなおしません。')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'けす' }));
+    fireEvent.click(fav().getByRole('button', { name: 'とじる' }));
+    expect(learn().dismissed).toEqual(['ねむい']);
+    for (let i = 0; i < 15; i++) freshSpeak();
+    expect(favs().some((f) => f.text === 'ねむい')).toBe(false);
+    expect(count('ねむい')).toBe(0);
+    // 手動で登録し直すと、記録から外れる
+    fireEvent.click(screen.getByRole('button', { name: 'よくつかう' }));
+    fireEvent.click(fav().getByRole('button', { name: 'いまの文章を登録' }));
+    expect(learn().dismissed).toEqual([]);
+    expect(favs().filter((f) => f.text === 'ねむい')).toEqual([expect.not.objectContaining({ auto: true })]);
+  });
+
+  it('学習記録の消去は確認してから行い、「よくつかう」は消さない', () => {
+    render(<App />);
+    for (let i = 0; i < 10; i++) freshSpeak();
+    for (let i = 0; i < 3; i++) freshSpeak('おなか');
+    const before = favs();
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    const set = within(screen.getByRole('dialog', { name: 'せってい' }));
+    expect(set.getByText('回数を記録している言葉：1件（この端末の中だけに保存しています）')).toBeInTheDocument();
+    fireEvent.click(set.getByRole('button', { name: '自動登録の学習記録を消去' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'やめる' }));
+    expect(count('おなか')).toBe(3);
+    fireEvent.click(set.getByRole('button', { name: '自動登録の学習記録を消去' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '消去する' }));
+    expect(learn().counts).toEqual({});
+    expect(set.getByText('学習記録を消去しました')).toBeInTheDocument();
+    expect(favs()).toEqual(before);
+  });
+});
+
+describe('とてもゆっくり', () => {
+  const openSettings = () => fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+  const set = () => within(screen.getByRole('dialog', { name: 'せってい' }));
+
+  it('4段階の順番。とてもゆっくりは 0.35 で、ほかの速さは変わらず、保存され、標準音声のまま話す', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'system' }));
+    const { unmount } = render(<App />);
+    openSettings();
+    const radios = set()
+      .getAllByRole('radio')
+      .filter((r) => (r as HTMLInputElement).name === 'rate')
+      .map((r) => r.parentElement!.textContent);
+    expect(radios).toEqual(['とてもゆっくり', 'ゆっくり', 'ふつう', 'はやめ']);
+    fireEvent.click(set().getByRole('radio', { name: 'とてもゆっくり' }));
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!)).toMatchObject({ rate: 'veryslow', syllableSep: 'off' });
+    fireEvent.click(set().getByRole('button', { name: 'とじる' }));
+    typeSeion('ねむい');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    // 初期は区切らない（文章全体を1回で、速さだけ遅く）
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'ねむい', rate: 0.35, voice: null, lang: 'ja-JP', pitch: 1 });
+    unmount();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ rate: 0.35, voice: null });
+  });
+
+  it('「一音ずつはっきり」を選ぶと読み上げ用の文字列だけ区切り、区切れない文は通常どおり。ほかの速さでは使わない', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'system', rate: 'veryslow' }));
+    render(<App />);
+    openSettings();
+    const details = set().getByText('一音ずつはっきり（試験的）').closest('details')!;
+    details.open = true;
+    fireEvent(details, new Event('toggle'));
+    expect(screen.getByTestId('syllable-off')).toHaveTextContent('ありがとう');
+    expect(screen.getByTestId('syllable-comma')).toHaveTextContent('あ、り、が、と、う');
+    expect(screen.getByTestId('syllable-space')).toHaveTextContent('あ り が と う');
+    fireEvent.click(set().getByRole('button', { name: '「、」で区切る（とてもゆっくり）で試聴' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ、り、が、と、う', rate: 0.35, voice: null });
+    fireEvent.click(set().getByRole('button', { name: 'つかわない（とてもゆっくり）で試聴' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'ありがとう', rate: 0.35 });
+    expect(synth.active).toHaveLength(1);
+    fireEvent.change(set().getByRole('combobox', { name: '比べる言葉' }), { target: { value: 'しゃしんをみせて' } });
+    expect(screen.getByTestId('syllable-comma')).toHaveTextContent('しゃ、しん、を、み、せ、て');
+    fireEvent.change(set().getByRole('combobox', { name: '比べる言葉' }), { target: { value: 'こんにちは' } });
+    expect(screen.getByTestId('syllable-comma')).toHaveTextContent(/^こんにちは$/);
+
+    fireEvent.click(set().getByRole('radio', { name: '「、」で区切る' }));
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!).syllableSep).toBe('comma');
+    fireEvent.click(set().getByRole('button', { name: 'とじる' }));
+    typeSeion('ねむい');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'ね、む、い', rate: 0.35, voice: null });
+    expect(shown()).toBe('ねむい');
+    fireEvent.click(screen.getByRole('button', { name: 'ぜんぶけす' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'ぜんぶけす' }));
+    typeSeion('こんにちは');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)?.text).toBe('こんにちは');
+
+    // ほかの速さでは区切らない
+    openSettings();
+    fireEvent.click(set().getByRole('radio', { name: 'ゆっくり' }));
+    fireEvent.click(set().getByRole('button', { name: 'とじる' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ぜんぶけす' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'ぜんぶけす' }));
+    typeSeion('ねむい');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'ねむい', rate: 0.6 });
   });
 });
