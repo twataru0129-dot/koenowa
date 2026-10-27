@@ -27,6 +27,8 @@ const SPEAK_ERRORS: Record<Exclude<SpeakResult, { ok: true }>['reason'], string>
   empty: '',
   unsupported: 'このブラウザーでは音声の読み上げが使えません。',
   'no-local-voice': '端末内の日本語の声が見つかりません。「せってい」を確認してください。',
+  'system-voice-may-be-online':
+    'この端末では、標準音声がオンラインの声になるおそれがあるため使えません。「せってい」で声を選んでください。',
 };
 
 export default function App() {
@@ -42,7 +44,8 @@ export default function App() {
   const [storageOk] = useState(isStorageAvailable);
   const lastKey = useRef<{ id: string; at: number } | null>(null);
 
-  const { supported, speaking, voices, activeVoice, speak, stop } = useSpeech(settings);
+  const { supported, speaking, voices, activeVoice, systemVoiceOk, speak, stop, refreshVoices, diagnostics } =
+    useSpeech(settings);
 
   // 入力中の文章・カーソル・ページを自動保存（履歴は作らない）
   useEffect(() => {
@@ -88,8 +91,9 @@ export default function App() {
     [settings.repeatGuardMs],
   );
 
-  const doSpeak = (text: string, voiceURI?: string | null) => {
-    const result = speak(text, voiceURI ? { voiceURI } : undefined);
+  /** voice：'system' は端末の標準音声、文字列はその voiceURI の声。省略時は設定どおり */
+  const doSpeak = (text: string, voice?: 'system' | string) => {
+    const result = speak(text, voice !== undefined ? { voice } : undefined);
     if (!result.ok) setNotice(SPEAK_ERRORS[result.reason]);
     else setNotice('');
     return result;
@@ -224,8 +228,11 @@ export default function App() {
           onChange={setSettings}
           voices={voices}
           activeVoice={activeVoice}
+          systemVoiceOk={systemVoiceOk}
+          onRefreshVoices={refreshVoices}
+          getDiagnostics={diagnostics}
           speechSupported={supported}
-          onTest={(voiceURI) => doSpeak(TEST_TEXT, voiceURI)}
+          onTest={(voice) => doSpeak(TEST_TEXT, voice)}
           onStop={stop}
           storageOk={storageOk}
           onClose={() => setPanel('none')}

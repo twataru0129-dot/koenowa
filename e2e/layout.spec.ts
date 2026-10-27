@@ -247,3 +247,64 @@ test.describe('PWA・オフライン', () => {
     expect(external).toEqual([]);
   });
 });
+
+test.describe('声の設定画面', () => {
+  // iPhone で「Kyoko（標準）しか取得できない」状態を再現する（Web Speech API が返す一覧を差し替える）
+  const onlyKyoko = () => {
+    const voices = [
+      { name: 'Kyoko', lang: 'ja-JP', voiceURI: 'com.apple.voice.compact.ja-JP.Kyoko', localService: true, default: true },
+      { name: 'Samantha', lang: 'en-US', voiceURI: 'com.apple.voice.compact.en-US.Samantha', localService: true, default: false },
+    ];
+    Object.defineProperty(window.speechSynthesis, 'getVoices', { value: () => voices });
+  };
+
+  for (const vp of [
+    { name: 'iPhone 14 縦', width: 390, height: 664 },
+    { name: 'iPhone 14 横', width: 844, height: 340 },
+  ]) {
+    test(`${vp.name}：標準音声・Kyoko・診断が表示され、横にはみ出さない`, async ({ browser }, info) => {
+      const ctx = await browser.newContext({
+        viewport: { width: vp.width, height: vp.height },
+        hasTouch: true,
+        isMobile: true,
+        permissions: ['clipboard-read', 'clipboard-write'],
+      });
+      await ctx.addInitScript(onlyKyoko);
+      const page = await ctx.newPage();
+      await page.goto('./');
+      await page.getByRole('button', { name: 'せってい' }).filter({ visible: true }).first().click();
+      const dialog = page.getByRole('dialog', { name: 'せってい' });
+      await expect(dialog.getByRole('radio', { name: /端末の標準音声（自動）/ })).toBeEnabled();
+      await expect(dialog.getByRole('button', { name: '端末の標準音声（自動）を試聴' })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: 'Kyokoを試聴' })).toBeVisible();
+      await expect(dialog.getByText('男性の日本語の声が見つかりません。')).toBeVisible();
+      await page.screenshot({ path: info.outputPath('voices.png') });
+
+      await dialog.getByRole('radio', { name: /端末の標準音声（自動）/ }).check();
+      await dialog.getByText('音声の診断（確認用）').click();
+      const out = dialog.getByTestId('voice-diagnostics');
+      await expect(out).toContainText('取得した音声の総数: 2');
+      await expect(out).toContainText('日本語音声の件数: 1');
+      await expect(out).toContainText('voiceURI=com.apple.voice.compact.ja-JP.Kyoko');
+      await out.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath('diagnostics.png') });
+      await dialog.getByRole('button', { name: 'コピー' }).click();
+      await expect(dialog.getByText('コピーしました')).toBeVisible();
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('日本語音声の件数: 1');
+
+      const overflow = await page.evaluate(() => {
+        const m = document.querySelector('.modal')!;
+        return { sw: document.documentElement.scrollWidth, mw: m.scrollWidth, cw: m.clientWidth };
+      });
+      expect(overflow.sw).toBeLessThanOrEqual(vp.width);
+      expect(overflow.mw).toBeLessThanOrEqual(overflow.cw);
+
+      // 設定を閉じて再読み込みしても標準音声のまま
+      await dialog.getByRole('button', { name: 'とじる' }).click();
+      await page.reload();
+      await page.getByRole('button', { name: 'せってい' }).filter({ visible: true }).first().click();
+      await expect(page.getByRole('radio', { name: /端末の標準音声（自動）/ })).toBeChecked();
+      await ctx.close();
+    });
+  }
+});

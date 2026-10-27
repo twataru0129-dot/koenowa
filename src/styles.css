@@ -1204,3 +1204,34 @@ button.key-smallkana::before {
   margin: 6px 0 0;
   font-size: 14px;
 }
+
+/* 音声の診断（確認用・ふだんは折りたたむ） */
+.diag summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.diag-output {
+  max-height: 40vh;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.voice-choice input:disabled + .voice-name {
+  opacity: 0.5;
+}

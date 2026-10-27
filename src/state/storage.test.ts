@@ -44,4 +44,17 @@ describe('端末内保存', () => {
     saveFavorites([]);
     expect(loadFavorites()).toEqual([]);
   });
+
+  it('voiceMode がない以前の設定は「声を指定する」として読み、選んだ声を残す', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceURI: 'uri:Otoya', rate: 'slow' }));
+    expect(loadSettings()).toMatchObject({ voiceMode: 'specific', voiceURI: 'uri:Otoya', rate: 'slow' });
+  });
+
+  it('端末の標準音声モードを保存して復元し、選んでいた声も残す', () => {
+    saveSettings({ ...DEFAULT_SETTINGS, voiceMode: 'system', voiceURI: 'uri:Kyoko' });
+    expect(loadSettings()).toMatchObject({ voiceMode: 'system', voiceURI: 'uri:Kyoko' });
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'robot' }));
+    expect(loadSettings().voiceMode).toBe('specific');
+  });
 });
+
