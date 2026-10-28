@@ -66,8 +66,19 @@ export default function App() {
   /** 前回数えたときの文章。起動直後は、保存から戻した文章を「数えた状態」として扱う */
   const lastCounted = useRef(normalizeLearnText(initial.text));
 
-  const { supported, speaking, voices, activeVoice, systemVoiceOk, speak, stop, refreshVoices, diagnostics } =
-    useSpeech(settings);
+  const {
+    supported,
+    speaking,
+    voices,
+    activeVoice,
+    systemVoiceOk,
+    speak,
+    speakChar,
+    stopChars,
+    stop,
+    refreshVoices,
+    diagnostics,
+  } = useSpeech(settings);
 
   // 入力中の文章・カーソル・ページを自動保存（履歴は作らない）
   useEffect(() => {
@@ -121,9 +132,23 @@ export default function App() {
       lastKey.current = { id: keyId, at: now };
       insertedSinceCount.current = true;
       dispatch({ type: 'insert', text });
+      // 文字を押したときに声を出す：受け付けた1文字だけを読む（自動登録の回数には数えない）。
+      // 失敗しても入力には影響させず、お知らせも出さない
+      if (settings.keyEcho) {
+        try {
+          speakChar(text);
+        } catch {
+          // 読み上げの失敗で入力を止めない
+        }
+      }
     },
-    [settings.repeatGuardMs],
+    [settings.repeatGuardMs, settings.keyEcho, speakChar],
   );
+
+  // 設定をオフにしたら、残っている文字の読み上げを止める
+  useEffect(() => {
+    if (!settings.keyEcho) stopChars();
+  }, [settings.keyEcho, stopChars]);
 
   /**
    * voice：'system' は端末の標準音声、文字列はその voiceURI の声。

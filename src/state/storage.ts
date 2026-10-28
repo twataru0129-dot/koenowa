@@ -61,6 +61,8 @@ export interface Settings {
   repeatGuardMs: number;
   /** 入力して発声した回数が多い言葉を「よくつかう」に自動で登録するか（初期値はオン） */
   autoFavorite: boolean;
+  /** 文字盤の文字を押すたびに、その1文字を読み上げるか（初期値はオフ） */
+  keyEcho: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -73,6 +75,7 @@ export const DEFAULT_SETTINGS: Settings = {
   allowOnlineVoices: false,
   repeatGuardMs: 0,
   autoFavorite: true,
+  keyEcho: false,
 };
 
 export interface Draft {
@@ -171,6 +174,7 @@ export function loadSettings(): Settings {
       s.syllableSep = v.syllableSep;
     }
     if (typeof v.autoFavorite === 'boolean') s.autoFavorite = v.autoFavorite;
+    if (typeof v.keyEcho === 'boolean') s.keyEcho = v.keyEcho;
     if (typeof v.allowOnlineVoices === 'boolean') s.allowOnlineVoices = v.allowOnlineVoices;
     if (typeof v.repeatGuardMs === 'number' && v.repeatGuardMs >= 0 && v.repeatGuardMs <= 2000) {
       s.repeatGuardMs = v.repeatGuardMs;

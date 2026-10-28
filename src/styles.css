@@ -1419,3 +1419,9 @@ button.key-smallkana::before {
 .segmented.rate-grid label {
   justify-content: flex-start;
 }
+
+/* 入力：文字を押したときに声を出す（下の設定との間をあける） */
+.check-key-echo {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
