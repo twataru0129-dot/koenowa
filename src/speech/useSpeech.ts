@@ -10,6 +10,9 @@ import {
   type VoiceInfo,
 } from './speech';
 
+/** 文字ごとの読み上げの速さ */
+export const KEY_ECHO_RATE = 0.95;
+
 let sharedSpeaker: Speaker | null = null;
 
 /** テストで差し替えられるようにする */
@@ -77,6 +80,19 @@ export function useSpeech(settings: Settings) {
     [speaker, rate, syllable, settings.voiceMode, settings.voiceURI, settings.allowOnlineVoices, settings.speechStyle],
   );
 
+  /** 押した1文字を読む。速さは文章の設定と関係なく、聞き取りやすい「ふつう」（0.95）に固定する */
+  const speakChar = useCallback(
+    (char: string): SpeakResult =>
+      speaker.speakChar(char, {
+        rate: KEY_ECHO_RATE,
+        voiceURI: settings.voiceURI,
+        allowOnlineVoices: settings.allowOnlineVoices,
+        useSystemVoice: settings.voiceMode === 'system',
+      }),
+    [speaker, settings.voiceMode, settings.voiceURI, settings.allowOnlineVoices],
+  );
+  const stopChars = useCallback(() => speaker.stopChars(), [speaker]);
+
   const stop = useCallback(() => speaker.stop(), [speaker]);
   const refreshVoices = useCallback(() => setVoices(speaker.voices()), [speaker]);
   const diagnostics = useCallback(() => speaker.diagnostics(), [speaker]);
@@ -93,6 +109,8 @@ export function useSpeech(settings: Settings) {
     activeVoice,
     systemVoiceOk,
     speak,
+    speakChar,
+    stopChars,
     stop,
     refreshVoices,
     diagnostics,

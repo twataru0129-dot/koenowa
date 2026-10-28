@@ -293,6 +293,17 @@ export function SettingsPanel({
 
       <section className="settings-section" aria-labelledby="set-input">
         <h3 id="set-input">入力</h3>
+        <label className="check check-key-echo">
+          <input
+            type="checkbox"
+            checked={settings.keyEcho}
+            onChange={(e) => onChange({ ...settings, keyEcho: e.target.checked })}
+          />
+          <span>
+            文字を押したときに声を出す
+            <small>文字盤の文字を押すたびに、その文字を読み上げます。</small>
+          </span>
+        </label>
         <fieldset className="field">
           <legend>同じ文字の連続入力をふせぐ</legend>
           <div className="segmented">

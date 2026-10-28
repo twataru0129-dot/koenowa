@@ -93,5 +93,13 @@ describe('端末内保存', () => {
     saveSettings({ ...DEFAULT_SETTINGS, rateValue: 0.6 });
     expect(loadSettings().rateValue).toBe(0.6);
   });
+
+  it('「文字を押したときに声を出す」は初期値オフ。以前の設定もオフとして読み、保存して復元できる', () => {
+    expect(DEFAULT_SETTINGS.keyEcho).toBe(false);
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'system', rate: 'slow', autoFavorite: true }));
+    expect(loadSettings()).toMatchObject({ keyEcho: false, voiceMode: 'system', rate: 'slow' });
+    saveSettings({ ...DEFAULT_SETTINGS, keyEcho: true });
+    expect(loadSettings().keyEcho).toBe(true);
+  });
 });
 

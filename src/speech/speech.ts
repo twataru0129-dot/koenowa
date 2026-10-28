@@ -130,6 +130,17 @@ export function toSyllableText(text: string, separator: SyllableSeparator): stri
   return out.join('');
 }
 
+/** 文字ごとの読み上げで、同時に持つ発声の数（話している1つ＋次の1つ） */
+export const CHAR_QUEUE_MAX = 2;
+
+/**
+ * 文字ごとの読み上げの対象か。清音・濁音・半濁音・小文字（ひらがな1文字）だけ。
+ * 記号（、。！？ー など）・空白・改行は読まない。
+ */
+export function isEchoChar(char: string): boolean {
+  return /^[\u3041-\u3096]$/.test(char);
+}
+
 /** 文字（かな・漢字・英字）または数字を1つ以上含むか */
 export function hasSpeakableText(text: string): boolean {
   return /[\p{L}\p{N}]/u.test(text);
@@ -282,6 +293,8 @@ export class Speaker {
   private synth: SpeechSynthesis | null;
   private Utterance: typeof SpeechSynthesisUtterance | null;
   private current: SpeechSynthesisUtterance | null = null;
+  /** 文字ごとの読み上げ（話している1つ＋待っている1つまで） */
+  private chars: SpeechSynthesisUtterance[] = [];
   private events: SpeakerEvents;
 
   constructor(
@@ -383,10 +396,70 @@ export class Speaker {
     return { ok: true };
   }
 
+  /**
+   * 文字盤で押した1文字だけを読む（「文字を押したときに声を出す」）。
+   * 文章の読み上げとは別に、ひらがな1文字だけを、加工せずにそのまま渡す。
+   * 待ち行列は「話している1つ＋次の1つ」までにし、それより速く押されたときは
+   * たまった分を捨てて最新の文字から読み直す（古い文字が延々と続かないように）。
+   */
+  speakChar(char: string, options: Omit<SpeakOptions, 'style' | 'syllable'>): SpeakResult {
+    if (!isEchoChar(char)) return { ok: false, reason: 'empty' };
+    if (!this.synth || !this.Utterance) return { ok: false, reason: 'unsupported' };
+    let voice: VoiceInfo | null | undefined;
+    const voices = this.voices();
+    if (options.useSystemVoice) {
+      if (!systemVoiceAllowed(voices, options.allowOnlineVoices)) {
+        return { ok: false, reason: 'system-voice-may-be-online' };
+      }
+    } else {
+      voice = pickVoice(voices, options.voiceURI, options.allowOnlineVoices);
+      if (voice === null) return { ok: false, reason: 'no-local-voice' };
+    }
+    // 文章を読んでいる途中なら止める（新しく入力を始めたため）
+    if (this.current) this.stop();
+    if (this.chars.length >= CHAR_QUEUE_MAX) {
+      this.chars = [];
+      this.synth.cancel();
+    }
+    const u = new this.Utterance(char);
+    try {
+      u.lang = voice?.lang ?? 'ja-JP';
+      if (voice) u.voice = voice.voice;
+      u.rate = options.rate;
+      u.pitch = 1;
+      u.volume = 1;
+    } catch {
+      return { ok: false, reason: 'unsupported' };
+    }
+    const done = () => {
+      this.chars = this.chars.filter((c) => c !== u);
+    };
+    u.onend = done;
+    u.onerror = done;
+    try {
+      if (this.synth.paused) this.synth.resume();
+      this.synth.speak(u);
+    } catch {
+      // 文字の読み上げに失敗しても、文字の入力は続けられるようにする
+      done();
+      return { ok: false, reason: 'unsupported' };
+    }
+    this.chars.push(u);
+    return { ok: true };
+  }
+
+  /** 文字ごとの読み上げだけを止める（文章の読み上げ中なら何もしない） */
+  stopChars() {
+    if (!this.synth || this.chars.length === 0 || this.current) return;
+    this.chars = [];
+    this.synth.cancel();
+  }
+
   stop() {
     if (!this.synth) return;
     const had = this.current !== null;
     this.current = null;
+    this.chars = [];
     if (this.synth.speaking || this.synth.pending || had) this.synth.cancel();
     if (had) this.events.onStateChange?.(false);
   }

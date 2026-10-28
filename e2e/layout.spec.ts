@@ -477,3 +477,70 @@ test.describe('自動登録ととてもゆっくり', () => {
     await ctx.close();
   });
 });
+
+test.describe('文字を押したときに声を出す', () => {
+  // ブラウザーの音声合成に渡された文字列を記録する（実際の音は出さない）
+  const recordSpeech = () => {
+    const w = window as unknown as { __spoken: string[] };
+    w.__spoken = [];
+    const voices = [{ name: 'Kyoko', lang: 'ja-JP', voiceURI: 'k', localService: true, default: true }];
+    Object.defineProperty(window.speechSynthesis, 'getVoices', { value: () => voices });
+    Object.defineProperty(window.speechSynthesis, 'speak', {
+      value: (u: SpeechSynthesisUtterance) => {
+        w.__spoken.push(u.text);
+        setTimeout(() => u.onend?.(new Event('end') as SpeechSynthesisEvent), 30);
+      },
+    });
+    Object.defineProperty(window.speechSynthesis, 'cancel', { value: () => undefined });
+  };
+
+  for (const vp of [
+    { name: 'iPhone 14 縦', width: 390, height: 664 },
+    { name: 'iPhone 14 横', width: 844, height: 340 },
+    { name: 'iPad 横', width: 1180, height: 820 },
+  ]) {
+    test(`${vp.name}：オンにすると押した文字を読み、なぞりでは読まず、はっせいで文章を読む`, async ({ browser }, info) => {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(recordSpeech);
+      // 利用者の iPhone と同じ「端末の標準音声（自動）」で確かめる
+      await ctx.addInitScript(() => {
+        if (!localStorage.getItem('koenowa.v1.settings')) {
+          localStorage.setItem('koenowa.v1.settings', JSON.stringify({ voiceMode: 'system' }));
+        }
+      });
+      const page = await ctx.newPage();
+      await page.goto('./');
+      await page.getByRole('button', { name: 'せってい' }).filter({ visible: true }).first().click();
+      const dialog = page.getByRole('dialog', { name: 'せってい' });
+      const box = dialog.getByRole('checkbox', { name: /文字を押したときに声を出す/ });
+      await expect(box).not.toBeChecked();
+      await box.check();
+      await box.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath('settings.png') });
+      const o = await page.evaluate(() => {
+        const m = document.querySelector('.modal')!;
+        return { sw: document.documentElement.scrollWidth, mw: m.scrollWidth, cw: m.clientWidth };
+      });
+      expect(o.sw).toBeLessThanOrEqual(vp.width);
+      expect(o.mw).toBeLessThanOrEqual(o.cw);
+      await dialog.getByRole('button', { name: 'とじる' }).click();
+
+      for (const ch of ['あ', 'い', 'す']) await page.getByRole('button', { name: ch, exact: true }).tap();
+      await expect(page.getByTestId('text-display')).toHaveText(/あいす/);
+      // 文字盤をなぞってページを変えても、文字は入らず声も出ない
+      const b = (await page.getByTestId('board').boundingBox())!;
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await page.mouse.down();
+      const dx = Math.min(200, b.width * 0.4); // 画面の外に出ない長さでなぞる
+      await page.mouse.move(b.x + b.width / 2 - dx / 2, b.y + b.height / 2, { steps: 5 });
+      await page.mouse.move(b.x + b.width / 2 - dx, b.y + b.height / 2, { steps: 5 });
+      await page.mouse.up();
+      await expect(page.getByRole('group', { name: /2ページ目/ })).toBeVisible();
+      await page.getByRole('button', { name: 'はっせい' }).tap();
+      const spoken = await page.evaluate(() => (window as unknown as { __spoken: string[] }).__spoken);
+      expect(spoken).toEqual(['あ', 'い', 'す', 'あいす']);
+      await expect(page.getByTestId('text-display')).toHaveText(/^あいす/);
+      await ctx.close();
+    });
+  }
+});

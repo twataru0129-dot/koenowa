@@ -952,3 +952,151 @@ describe('とてもゆっくり', () => {
     expect(synth.spoken.at(-1)).toMatchObject({ text: 'ねむい', rate: 0.6 });
   });
 });
+
+describe('文字を押したときに声を出す', () => {
+  const enable = () => {
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    const set = within(screen.getByRole('dialog', { name: 'せってい' }));
+    const box = set.getByRole('checkbox', { name: /文字を押したときに声を出す/ });
+    fireEvent.click(box);
+    fireEvent.click(set.getByRole('button', { name: 'とじる' }));
+  };
+  const spokenTexts = () => synth.spoken.map((u) => u.text);
+  const saved = () => JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!);
+
+  it('初期はオフで、文字を押しても音は出ない（入力はできる）', () => {
+    render(<App />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    const box = within(screen.getByRole('dialog', { name: 'せってい' })).getByRole('checkbox', {
+      name: /文字を押したときに声を出す/,
+    });
+    expect(box).not.toBeChecked();
+    expect(screen.getByText('文字盤の文字を押すたびに、その文字を読み上げます。')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'せってい' })).getByRole('button', { name: 'とじる' }));
+    typeSeion('あいす');
+    expect(shown()).toBe('あいす');
+    expect(synth.spoken).toHaveLength(0);
+  });
+
+  it('オンにすると押した文字だけを読み、「はっせい」で文章全体を読む。設定は再起動後も残る', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ voiceMode: 'system', rate: 'veryslow' }));
+    const { unmount } = render(<App />);
+    enable();
+    expect(saved().keyEcho).toBe(true);
+    for (const ch of ['あ', 'い', 'す']) {
+      tap(key(ch));
+      synth.finish();
+    }
+    expect(shown()).toBe('あいす');
+    expect(spokenTexts()).toEqual(['あ', 'い', 'す']);
+    // 文字は「ふつう」の速さ・端末の標準音声。文章の速さ（とてもゆっくり）は変わらない
+    expect(synth.spoken.every((u) => u.rate === 0.95 && u.voice === null && u.lang === 'ja-JP')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あいす', rate: 0.35, voice: null });
+    unmount();
+    render(<App />);
+    tap(key('か'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'か', rate: 0.95 });
+  });
+
+  it('続けて押しても文字は欠けず、声は重ならない。「はっせい」は文字の読み上げより優先する', () => {
+    render(<App />);
+    enable();
+    for (const ch of ['あ', 'い', 'す', 'か', 'き', 'く']) tap(key(ch));
+    expect(shown()).toBe('あいすかきく');
+    expect(synth.active.length).toBeLessThanOrEqual(2);
+    expect(synth.active.at(-1)?.text).toBe('く');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.active.map((u) => u.text)).toEqual(['あいすかきく']);
+  });
+
+  it('濁音・半濁音・小文字は読み、記号・空白・改行は読まない', () => {
+    render(<App />);
+    enable();
+    pageTo(2);
+    tap(key('が'));
+    tap(key('ぱ'));
+    pageTo(3);
+    for (const name of ['ちいさい よ', 'ちいさい つ', 'まる（句点）', 'てん（読点）', 'はてな', 'びっくり', 'のばす（長音）', '空白', '改行']) {
+      tap(key(name));
+      synth.finish();
+    }
+    expect(spokenTexts()).toEqual(['が', 'ぱ', 'ょ', 'っ']);
+    expect(textOf()).toBe('がぱょっ。、？！ー \n');
+  });
+
+  it('なぞり・ページ切り替え・削除・全文削除・もどす・やりなおすでは声を出さない', () => {
+    render(<App />);
+    enable();
+    tap(key('あ'));
+    synth.finish();
+    const before = synth.spoken.length;
+    swipe(key('な'), -120);
+    swipe(key('だ'), 120);
+    fireEvent.click(screen.getByRole('button', { name: 'つぎの文字盤' }));
+    fireEvent.click(screen.getByRole('button', { name: 'まえの文字盤' }));
+    pageTo(1);
+    fireEvent.click(screen.getByRole('button', { name: 'もどす' }));
+    fireEvent.click(screen.getByRole('button', { name: 'やりなおす' }));
+    fireEvent.click(screen.getByRole('button', { name: '1文字けす' }));
+    tap(key('い'));
+    synth.finish();
+    fireEvent.click(screen.getByRole('button', { name: 'ぜんぶけす' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'ぜんぶけす' }));
+    expect(synth.spoken.slice(before).map((u) => u.text)).toEqual(['い']);
+    expect(shown()).toBe('');
+  });
+
+  it('連続入力防止で受け付けなかったタップでは声を出さない', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ repeatGuardMs: 600, keyEcho: true }));
+    render(<App />);
+    tap(key('あ'));
+    tap(key('あ'));
+    tap(key('い'));
+    expect(shown()).toBe('あい');
+    expect(spokenTexts()).toEqual(['あ', 'い']);
+  });
+
+  it('オフにすると残っている文字の読み上げを止め、以後は音を出さない', () => {
+    render(<App />);
+    enable();
+    tap(key('あ'));
+    tap(key('い'));
+    expect(synth.active).toHaveLength(2);
+    enable(); // もう一度押してオフ
+    expect(saved().keyEcho).toBe(false);
+    expect(synth.active).toHaveLength(0);
+    const before = synth.spoken.length;
+    tap(key('う'));
+    expect(synth.spoken).toHaveLength(before);
+  });
+
+  it('文字ごとの読み上げは自動登録の回数に数えない。「はっせい」は従来どおり数える', () => {
+    render(<App />);
+    enable();
+    for (const ch of ['ね', 'む', 'い']) {
+      tap(key(ch));
+      synth.finish();
+    }
+    expect(spokenTexts()).toEqual(['ね', 'む', 'い']);
+    expect(JSON.parse(localStorage.getItem(LEARNING_KEY) ?? '{"counts":{}}').counts).toEqual({});
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(JSON.parse(localStorage.getItem(LEARNING_KEY)!).counts['ねむい'].count).toBe(1);
+    // 同じ入力のまま、文字を押さずに「はっせい」を押しても増えない
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(JSON.parse(localStorage.getItem(LEARNING_KEY)!).counts['ねむい'].count).toBe(1);
+  });
+});
+
+describe('文字の読み上げに失敗しても入力できる', () => {
+  it('音声エンジンが例外を出しても文字は入り、お知らせも出さない', () => {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ keyEcho: true }));
+    synth.speak = () => {
+      throw new Error('boom');
+    };
+    render(<App />);
+    typeSeion('あいす');
+    expect(shown()).toBe('あいす');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});

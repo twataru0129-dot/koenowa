@@ -1,6 +1,7 @@
 import { FakeSynth, FakeUtterance, fakeVoice, IOS_JA_VOICES } from '../test/fakeSpeech';
 import {
   buildSpeechText,
+  CHAR_QUEUE_MAX,
   listJapaneseVoices,
   pickVoice,
   Speaker,
@@ -340,5 +341,89 @@ describe('とてもゆっくり：一音ずつはっきり（試験的）', () =
     speaker.speak('こんにちは', { ...opts, rate: 0.35, useSystemVoice: true, syllable: 'comma' });
     expect(synth.active).toHaveLength(1);
     expect(synth.active[0].text).toBe('こんにちは');
+  });
+});
+
+describe('文字を押したときに声を出す（1文字の読み上げ）', () => {
+  const charOpts = { rate: 0.95, voiceURI: null, allowOnlineVoices: false, useSystemVoice: true };
+
+  it('ひらがな1文字だけを、加工せず、端末の標準音声・速さ 0.95 で読む', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    for (const ch of ['あ', 'が', 'ぱ', 'ゃ', 'っ', 'ん']) {
+      expect(speaker.speakChar(ch, charOpts)).toEqual({ ok: true });
+      expect(synth.spoken.at(-1)).toMatchObject({ text: ch, rate: 0.95, voice: null, lang: 'ja-JP', pitch: 1 });
+      synth.finish();
+    }
+  });
+
+  it('記号・空白・改行・長音・複数文字は読まない', () => {
+    const { synth, speaker } = make();
+    for (const ch of ['、', '。', '！', '？', 'ー', '「', '・', ' ', '\n', 'あい', '', 'A', '雨']) {
+      expect(speaker.speakChar(ch, charOpts)).toEqual({ ok: false, reason: 'empty' });
+    }
+    expect(synth.spoken).toHaveLength(0);
+  });
+
+  it('続けて押しても、話している1つ＋次の1つまでしか持たず、最新の文字を必ず読む', () => {
+    const { synth, speaker } = make();
+    speaker.speakChar('あ', charOpts);
+    speaker.speakChar('い', charOpts);
+    expect(synth.active.map((u) => u.text)).toEqual(['あ', 'い']);
+    speaker.speakChar('す', charOpts);
+    expect(synth.active.map((u) => u.text)).toEqual(['す']);
+    for (const ch of ['か', 'き', 'く', 'け', 'こ']) speaker.speakChar(ch, charOpts);
+    expect(synth.active.length).toBeLessThanOrEqual(CHAR_QUEUE_MAX);
+    expect(synth.active.at(-1)?.text).toBe('こ');
+  });
+
+  it('読み終わった分は数えないので、ふつうの速さで押せば1文字ずつ全部読む', () => {
+    const { synth, speaker } = make();
+    for (const ch of ['あ', 'い', 'す']) {
+      speaker.speakChar(ch, charOpts);
+      synth.finish();
+    }
+    expect(synth.spoken.map((u) => u.text)).toEqual(['あ', 'い', 'す']);
+    expect(synth.cancelCount).toBe(0);
+  });
+
+  it('文章の発声は文字の読み上げを止めてから話す。文字を押すと文章の読み上げは止まる', () => {
+    const { synth, speaker } = make();
+    speaker.speakChar('あ', charOpts);
+    speaker.speakChar('い', charOpts);
+    speaker.speak('あいす', opts);
+    expect(synth.active.map((u) => u.text)).toEqual(['あいす']);
+    speaker.speakChar('か', charOpts);
+    expect(synth.active.map((u) => u.text)).toEqual(['か']);
+  });
+
+  it('stopChars は文字の読み上げだけを止め、文章の読み上げ中は何もしない', () => {
+    const { synth, speaker } = make();
+    speaker.speakChar('あ', charOpts);
+    speaker.stopChars();
+    expect(synth.active).toHaveLength(0);
+    speaker.speak('あいす', opts);
+    speaker.stopChars();
+    expect(synth.active.map((u) => u.text)).toEqual(['あいす']);
+  });
+
+  it('日本語のオンラインの声がある環境では、標準音声で文字を読まない', () => {
+    const { synth, speaker } = make([fakeVoice('Kyoko', 'ja-JP', true), fakeVoice('Google 日本語', 'ja-JP', false)]);
+    expect(speaker.speakChar('あ', charOpts)).toEqual({ ok: false, reason: 'system-voice-may-be-online' });
+    expect(synth.spoken).toHaveLength(0);
+    expect(speaker.speakChar('あ', { ...charOpts, useSystemVoice: false })).toEqual({ ok: true });
+    expect(synth.spoken[0].voice?.name).toBe('Kyoko');
+  });
+});
+
+describe('文字の読み上げでエラーが起きたとき', () => {
+  it('speak が例外を出しても、例外を外に出さず失敗として返す', () => {
+    const { synth, speaker } = make();
+    synth.speak = () => {
+      throw new Error('boom');
+    };
+    expect(speaker.speakChar('あ', { rate: 0.95, voiceURI: null, allowOnlineVoices: false })).toEqual({
+      ok: false,
+      reason: 'unsupported',
+    });
   });
 });
