@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ChangelogView, FeedbackSection, UpdatesSection } from './AppInfo';
 import { RATE_MAX, RATE_MIN, RATE_OPTIONS, type Favorite, type Settings, type SyllableSep } from '../state/storage';
 import {
   buildSpeechText,
@@ -118,247 +119,284 @@ export function SettingsPanel({
   else if (activeVoice === null) voiceStatus = `端末内の日本語音声が見つかりません。${DOWNLOAD_GUIDE}`;
   else voiceStatus = `いまの声：${activeVoice.name}（${voiceSummary(activeVoice)}）`;
 
-  return (
-    <Modal title="せってい" onClose={onClose} className="settings">
-      <section className="settings-section" aria-labelledby="set-voice">
-        <h3 id="set-voice">声</h3>
-        <p
-          className={`settings-note ${(systemMode ? systemVoiceOk : activeVoice) ? '' : 'is-warning'}`}
-          role="status"
-        >
-          {voiceStatus}
-        </p>
-        {savedMissing && activeVoice && (
-          <p className="settings-note is-warning">
-            前に選んだ声がこの端末で見つからないため、「{activeVoice.name}」を使っています。
-          </p>
-        )}
+  // アップデート情報は、同じパネルの中で切り替えて表示する（モーダルを重ねない）。
+  // 設定の内容は隠すだけで残すので、開いていた項目やスクロール位置はそのまま戻る
+  const [view, setView] = useState<'settings' | 'changelog'>('settings');
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const updatesButtonRef = useRef<HTMLButtonElement>(null);
+  const savedScroll = useRef(0);
+  const scroller = () => settingsRef.current?.closest('.modal-body') as HTMLElement | null;
+  const openChangelog = () => {
+    savedScroll.current = scroller()?.scrollTop ?? 0;
+    setView('changelog');
+  };
+  const backToSettings = () => setView('settings');
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const el = scroller();
+    if (view === 'changelog') {
+      if (el) el.scrollTop = 0;
+    } else {
+      if (el) el.scrollTop = savedScroll.current;
+      updatesButtonRef.current?.focus({ preventScroll: true });
+    }
+  }, [view]);
 
-        {speechSupported && (
-          <fieldset className="field voice-field">
-            <legend>
-              声をえらぶ（この端末で使える日本語の声：{selectable.length}件）
-            </legend>
-            <div className="voice-group">
-              <h4>端末にまかせる</h4>
-              <ul className="voice-list">
-                <li className={`voice-item ${systemMode ? 'is-on' : ''}`}>
-                  <label className="voice-choice">
-                    <input
-                      type="radio"
-                      name="voice"
-                      value="system"
-                      checked={systemMode}
+  return (
+    <Modal
+      title={view === 'changelog' ? 'アップデート情報' : 'せってい'}
+      onClose={view === 'changelog' ? backToSettings : onClose}
+      className="settings"
+    >
+      {view === 'changelog' && <ChangelogView onBack={backToSettings} />}
+      <div ref={settingsRef} hidden={view === 'changelog'}>
+        <FeedbackSection />
+        <UpdatesSection onOpen={openChangelog} buttonRef={updatesButtonRef} />
+
+        <section className="settings-section" aria-labelledby="set-voice">
+          <h3 id="set-voice">声</h3>
+          <p
+            className={`settings-note ${(systemMode ? systemVoiceOk : activeVoice) ? '' : 'is-warning'}`}
+            role="status"
+          >
+            {voiceStatus}
+          </p>
+          {savedMissing && activeVoice && (
+            <p className="settings-note is-warning">
+              前に選んだ声がこの端末で見つからないため、「{activeVoice.name}」を使っています。
+            </p>
+          )}
+
+          {speechSupported && (
+            <fieldset className="field voice-field">
+              <legend>
+                声をえらぶ（この端末で使える日本語の声：{selectable.length}件）
+              </legend>
+              <div className="voice-group">
+                <h4>端末にまかせる</h4>
+                <ul className="voice-list">
+                  <li className={`voice-item ${systemMode ? 'is-on' : ''}`}>
+                    <label className="voice-choice">
+                      <input
+                        type="radio"
+                        name="voice"
+                        value="system"
+                        checked={systemMode}
+                        disabled={!systemVoiceOk}
+                        onChange={() => onChange({ ...settings, voiceMode: 'system' })}
+                      />
+                      <span className="voice-name">端末の標準音声（自動）</span>
+                      <span className="voice-meta">
+                        日本語（ja-JP）だけを指定し、声は端末が選びます。男性の声になるとは限りません。
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-secondary voice-test"
+                      aria-label="端末の標準音声（自動）を試聴"
                       disabled={!systemVoiceOk}
-                      onChange={() => onChange({ ...settings, voiceMode: 'system' })}
-                    />
-                    <span className="voice-name">端末の標準音声（自動）</span>
-                    <span className="voice-meta">
-                      日本語（ja-JP）だけを指定し、声は端末が選びます。男性の声になるとは限りません。
-                    </span>
-                  </label>
-                  <button
-                    type="button"
-                    className="btn btn-secondary voice-test"
-                    aria-label="端末の標準音声（自動）を試聴"
-                    disabled={!systemVoiceOk}
-                    onClick={() => onTest('system')}
-                  >
-                    <Icon name="speak" />
-                    <span>試聴</span>
-                  </button>
-                </li>
-              </ul>
-              {!systemVoiceOk && (
-                <p className="settings-hint is-warning">
-                  この端末では、声を指定しないとオンラインの声が選ばれるおそれがあるため、選べません。
+                      onClick={() => onTest('system')}
+                    >
+                      <Icon name="speak" />
+                      <span>試聴</span>
+                    </button>
+                  </li>
+                </ul>
+                {!systemVoiceOk && (
+                  <p className="settings-hint is-warning">
+                    この端末では、声を指定しないとオンラインの声が選ばれるおそれがあるため、選べません。
+                  </p>
+                )}
+              </div>
+              {GENDER_GROUPS.map(({ gender, title }) => {
+                const group = selectable.filter((v) => v.gender === gender);
+                if (group.length === 0) return null;
+                return (
+                  <div key={gender} className="voice-group">
+                    <h4>{title}</h4>
+                    <ul className="voice-list">
+                      {group.map((v) => {
+                        const selected = !systemMode && activeVoice?.uri === v.uri;
+                        return (
+                          <li key={v.uri} className={`voice-item ${selected ? 'is-on' : ''}`}>
+                            <label className="voice-choice">
+                              <input
+                                type="radio"
+                                name="voice"
+                                value={v.uri}
+                                checked={selected}
+                                onChange={() => onChange({ ...settings, voiceMode: 'specific', voiceURI: v.uri })}
+                              />
+                              <span className="voice-name">{v.name}</span>
+                              <span className="voice-meta">{voiceSummary(v)}</span>
+                            </label>
+                            <button
+                              type="button"
+                              className="btn btn-secondary voice-test"
+                              aria-label={`${v.name}を試聴`}
+                              onClick={() => onTest(v.uri)}
+                            >
+                              <Icon name="speak" />
+                              <span>試聴</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
+            </fieldset>
+          )}
+
+          {speechSupported && voices.length > 0 && !hasMale && (
+            <div className="settings-note voice-guide" role="note">
+              <strong>男性の日本語の声が見つかりません。</strong>
+              <p>
+                この端末のブラウザーから使える日本語の声に、男性の声として確認できるもの（Otoya・Hattori など）がありません。{DOWNLOAD_GUIDE}
+              </p>
+              {hasUnknown && <p>「性別を判断できない声」の中に男性の声がふくまれている場合があります。試聴して確かめてください。</p>}
+              {systemVoiceOk && (
+                <p>
+                  「端末の標準音声（自動）」を選ぶと、iPhoneの「読み上げコンテンツ」で選んでいる日本語の声で話す場合があります（必ずそうなるとは限りません）。試聴して確かめてください。
                 </p>
               )}
+              <p>※ Siri の声は、Safari やホーム画面のアプリからは使えません。ダウンロード後も一覧に出ない声は、この端末のブラウザーからは指定できない声です。</p>
             </div>
-            {GENDER_GROUPS.map(({ gender, title }) => {
-              const group = selectable.filter((v) => v.gender === gender);
-              if (group.length === 0) return null;
-              return (
-                <div key={gender} className="voice-group">
-                  <h4>{title}</h4>
-                  <ul className="voice-list">
-                    {group.map((v) => {
-                      const selected = !systemMode && activeVoice?.uri === v.uri;
-                      return (
-                        <li key={v.uri} className={`voice-item ${selected ? 'is-on' : ''}`}>
-                          <label className="voice-choice">
-                            <input
-                              type="radio"
-                              name="voice"
-                              value={v.uri}
-                              checked={selected}
-                              onChange={() => onChange({ ...settings, voiceMode: 'specific', voiceURI: v.uri })}
-                            />
-                            <span className="voice-name">{v.name}</span>
-                            <span className="voice-meta">{voiceSummary(v)}</span>
-                          </label>
-                          <button
-                            type="button"
-                            className="btn btn-secondary voice-test"
-                            aria-label={`${v.name}を試聴`}
-                            onClick={() => onTest(v.uri)}
-                          >
-                            <Icon name="speak" />
-                            <span>試聴</span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })}
+          )}
+
+          <fieldset className="field">
+            <legend>はやさ</legend>
+            <div className="segmented rate-grid">
+              {RATE_OPTIONS.map((r) => {
+                const on = settings.rateValue === null && settings.rate === r.id;
+                return (
+                  <label key={r.id} className={on ? 'is-on' : ''}>
+                    <input
+                      type="radio"
+                      name="rate"
+                      value={r.id}
+                      checked={on}
+                      onChange={() => onChange({ ...settings, rate: r.id, rateValue: null })}
+                    />
+                    {r.label}
+                  </label>
+                );
+              })}
+            </div>
+            <SyllableSection settings={settings} onChange={onChange} onSpeakSyllable={onSpeakSyllable} />
+            <FineRate settings={settings} onChange={onChange} onTest={(rate) => onTest(undefined, rate)} />
           </fieldset>
-        )}
 
-        {speechSupported && voices.length > 0 && !hasMale && (
-          <div className="settings-note voice-guide" role="note">
-            <strong>男性の日本語の声が見つかりません。</strong>
-            <p>
-              この端末のブラウザーから使える日本語の声に、男性の声として確認できるもの（Otoya・Hattori など）がありません。{DOWNLOAD_GUIDE}
-            </p>
-            {hasUnknown && <p>「性別を判断できない声」の中に男性の声がふくまれている場合があります。試聴して確かめてください。</p>}
-            {systemVoiceOk && (
-              <p>
-                「端末の標準音声（自動）」を選ぶと、iPhoneの「読み上げコンテンツ」で選んでいる日本語の声で話す場合があります（必ずそうなるとは限りません）。試聴して確かめてください。
-              </p>
-            )}
-            <p>※ Siri の声は、Safari やホーム画面のアプリからは使えません。ダウンロード後も一覧に出ない声は、この端末のブラウザーからは指定できない声です。</p>
+          <div className="settings-buttons">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => onTest()}
+              disabled={!speechSupported}
+            >
+              <Icon name="speak" />
+              <span>ためしにきく</span>
+            </button>
           </div>
-        )}
+          <p className="settings-hint">ためしにきく・試聴：「{TEST_TEXT}」（いま選んでいるはやさで読みます）</p>
 
-        <fieldset className="field">
-          <legend>はやさ</legend>
-          <div className="segmented rate-grid">
-            {RATE_OPTIONS.map((r) => {
-              const on = settings.rateValue === null && settings.rate === r.id;
-              return (
-                <label key={r.id} className={on ? 'is-on' : ''}>
-                  <input
-                    type="radio"
-                    name="rate"
-                    value={r.id}
-                    checked={on}
-                    onChange={() => onChange({ ...settings, rate: r.id, rateValue: null })}
-                  />
-                  {r.label}
-                </label>
-              );
-            })}
-          </div>
-          <SyllableSection settings={settings} onChange={onChange} onSpeakSyllable={onSpeakSyllable} />
-          <FineRate settings={settings} onChange={onChange} onTest={(rate) => onTest(undefined, rate)} />
-        </fieldset>
+          {onlineVoices.length > 0 && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.allowOnlineVoices}
+                onChange={(e) =>
+                  onChange({
+                    ...settings,
+                    allowOnlineVoices: e.target.checked,
+                    voiceURI: e.target.checked ? settings.voiceURI : null,
+                  })
+                }
+              />
+              <span>
+                オンラインの声も使う（{onlineVoices.length}件）
+                <small>
+                  オンラインの声は、文章がブラウザーの提供元のサーバーへ送られる場合があり、通信がないと使えません。ふだんはオフのままにしてください。
+                </small>
+              </span>
+            </label>
+          )}
+        </section>
 
-        <div className="settings-buttons">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => onTest()}
-            disabled={!speechSupported}
-          >
-            <Icon name="speak" />
-            <span>ためしにきく</span>
-          </button>
-        </div>
-        <p className="settings-hint">ためしにきく・試聴：「{TEST_TEXT}」（いま選んでいるはやさで読みます）</p>
-
-        {onlineVoices.length > 0 && (
-          <label className="check">
+        <section className="settings-section" aria-labelledby="set-input">
+          <h3 id="set-input">入力</h3>
+          <label className="check check-key-echo">
             <input
               type="checkbox"
-              checked={settings.allowOnlineVoices}
-              onChange={(e) =>
-                onChange({
-                  ...settings,
-                  allowOnlineVoices: e.target.checked,
-                  voiceURI: e.target.checked ? settings.voiceURI : null,
-                })
-              }
+              checked={settings.keyEcho}
+              onChange={(e) => onChange({ ...settings, keyEcho: e.target.checked })}
             />
             <span>
-              オンラインの声も使う（{onlineVoices.length}件）
-              <small>
-                オンラインの声は、文章がブラウザーの提供元のサーバーへ送られる場合があり、通信がないと使えません。ふだんはオフのままにしてください。
-              </small>
+              文字を押したときに声を出す
+              <small>文字盤の文字を押すたびに、その文字を読み上げます。</small>
             </span>
           </label>
-        )}
-      </section>
+          <fieldset className="field">
+            <legend>同じ文字の連続入力をふせぐ</legend>
+            <div className="segmented">
+              {GUARD_OPTIONS.map((g) => (
+                <label key={g.ms} className={settings.repeatGuardMs === g.ms ? 'is-on' : ''}>
+                  <input
+                    type="radio"
+                    name="guard"
+                    checked={settings.repeatGuardMs === g.ms}
+                    onChange={() => onChange({ ...settings, repeatGuardMs: g.ms })}
+                  />
+                  {g.label}
+                </label>
+              ))}
+            </div>
+            <small className="settings-hint">
+              手がふるえて同じキーが2回入ってしまうときに使います。指定した時間内の同じキーは無視します。
+            </small>
+          </fieldset>
+        </section>
 
-      <section className="settings-section" aria-labelledby="set-input">
-        <h3 id="set-input">入力</h3>
-        <label className="check check-key-echo">
-          <input
-            type="checkbox"
-            checked={settings.keyEcho}
-            onChange={(e) => onChange({ ...settings, keyEcho: e.target.checked })}
-          />
-          <span>
-            文字を押したときに声を出す
-            <small>文字盤の文字を押すたびに、その文字を読み上げます。</small>
-          </span>
-        </label>
-        <fieldset className="field">
-          <legend>同じ文字の連続入力をふせぐ</legend>
-          <div className="segmented">
-            {GUARD_OPTIONS.map((g) => (
-              <label key={g.ms} className={settings.repeatGuardMs === g.ms ? 'is-on' : ''}>
-                <input
-                  type="radio"
-                  name="guard"
-                  checked={settings.repeatGuardMs === g.ms}
-                  onChange={() => onChange({ ...settings, repeatGuardMs: g.ms })}
-                />
-                {g.label}
-              </label>
-            ))}
-          </div>
-          <small className="settings-hint">
-            手がふるえて同じキーが2回入ってしまうときに使います。指定した時間内の同じキーは無視します。
-          </small>
-        </fieldset>
-      </section>
+        <AutoFavoriteSection
+          settings={settings}
+          onChange={onChange}
+          learnedCount={learnedCount}
+          onClearLearning={onClearLearning}
+        />
 
-      <AutoFavoriteSection
-        settings={settings}
-        onChange={onChange}
-        learnedCount={learnedCount}
-        onClearLearning={onClearLearning}
-      />
+        <section className="settings-section" aria-labelledby="set-data">
+          <h3 id="set-data">データとプライバシー</h3>
+          <ul className="settings-list">
+            <li>入力中の文章・よくつかう言葉・設定は、この端末の中だけに保存します。</li>
+            <li>話した文章の履歴は保存しません。</li>
+            <li>文章をインターネットへ送ることはありません（オンラインの声を許可した場合を除く）。</li>
+            {!storageOk && (
+              <li className="is-warning">
+                端末に保存できない状態です（プライベートブラウズ等）。アプリを閉じると文章が消えます。
+              </li>
+            )}
+          </ul>
+        </section>
 
-      <section className="settings-section" aria-labelledby="set-data">
-        <h3 id="set-data">データとプライバシー</h3>
-        <ul className="settings-list">
-          <li>入力中の文章・よくつかう言葉・設定は、この端末の中だけに保存します。</li>
-          <li>話した文章の履歴は保存しません。</li>
-          <li>文章をインターネットへ送ることはありません（オンラインの声を許可した場合を除く）。</li>
-          {!storageOk && (
-            <li className="is-warning">
-              端末に保存できない状態です（プライベートブラウズ等）。アプリを閉じると文章が消えます。
-            </li>
-          )}
-        </ul>
-      </section>
+        <SpeechCompareSection
+          settings={settings}
+          onChange={onChange}
+          currentText={currentText}
+          favorites={favorites}
+          onSpeakSample={onSpeakSample}
+        />
 
-      <SpeechCompareSection
-        settings={settings}
-        onChange={onChange}
-        currentText={currentText}
-        favorites={favorites}
-        onSpeakSample={onSpeakSample}
-      />
-
-      <VoiceDiagnosticsSection
-        allowOnline={settings.allowOnlineVoices}
-        getDiagnostics={getDiagnostics}
-        onRefresh={onRefreshVoices}
-      />
+        <VoiceDiagnosticsSection
+          allowOnline={settings.allowOnlineVoices}
+          getDiagnostics={getDiagnostics}
+          onRefresh={onRefreshVoices}
+        />
+      </div>
     </Modal>
   );
 }
