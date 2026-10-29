@@ -34,6 +34,7 @@
 - 保存：`localStorage`（入力中の文章・カーソル・ページ、よくつかう言葉、設定のみ。会話の履歴は保存しません）
 - PWA：`public/manifest.webmanifest` と、ビルド時に生成する Service Worker（`sw/sw.js` がテンプレートです）
 - 外部 CDN、Web フォント、分析 SDK は使っていません
+- バージョン番号：`package.json` の `version` だけで管理しています。ビルド時に `vite.config.ts` の `define`（`__APP_VERSION__`）で画面に埋め込まれ、ヘッダーの「こえのわ」の右に `v1.0.0` のように表示されます。番号を変えるときは `package.json` だけを書き換えます
 
 | ファイル | 役割 |
 |---|---|

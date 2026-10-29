@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import pkg from '../package.json';
 import App from './App';
 import { Speaker } from './speech/speech';
 import { setSpeakerForTesting } from './speech/useSpeech';
@@ -1098,5 +1099,18 @@ describe('文字の読み上げに失敗しても入力できる', () => {
     typeSeion('あいす');
     expect(shown()).toBe('あいす');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('バージョン番号の表示', () => {
+  it('ヘッダーの「こえのわ」の右に、package.json の version を「v」付きで表示する', () => {
+    render(<App />);
+    const title = screen.getByRole('heading', { level: 1, name: 'こえのわ' });
+    const version = screen.getByLabelText(`バージョン ${pkg.version}`);
+    expect(version).toHaveTextContent(`v${pkg.version}`);
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+/);
+    // タイトルのすぐ後ろ（同じヘッダーの中）にある
+    expect(title.nextElementSibling).toBe(version);
+    expect(version.closest('header')).toBe(title.closest('header'));
   });
 });

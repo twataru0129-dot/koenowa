@@ -125,6 +125,7 @@ select {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .brand-icon {
@@ -141,7 +142,20 @@ select {
   color: var(--coral);
 }
 
+/* バージョン番号（package.json の version をビルド時に表示する） */
+.app-version {
+  flex: none;
+  align-self: flex-end;
+  margin-bottom: 0.25em;
+  font-size: 12px;
+  line-height: 1;
+  color: #8a8172;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
 .btn-settings {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
