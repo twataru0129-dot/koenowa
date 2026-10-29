@@ -19,6 +19,8 @@ const PATHS: Record<string, string> = {
   down: 'M12 18l7-7-1.4-1.4-4.6 4.6V4h-2v10.2l-4.6-4.6L5 11z',
   edit: 'M3 17.2V21h3.8L17.8 9.9l-3.8-3.7L3 17.2zM20.7 7a1 1 0 0 0 0-1.4l-2.3-2.3a1 1 0 0 0-1.4 0l-1.8 1.8 3.7 3.8L20.7 7z',
   plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z',
+  external: 'M14 3v2h3.6l-9.8 9.8 1.4 1.4L19 6.4V10h2V3h-7zm5 16H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7z',
+  info: 'M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16z',
 };
 
 export function Icon({ name, className }: { name: keyof typeof PATHS | string; className?: string }) {

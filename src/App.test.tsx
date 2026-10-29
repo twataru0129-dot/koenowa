@@ -713,7 +713,8 @@ describe('はやさの設定', () => {
   });
 });
 
-describe('よく使う言葉の自動登録', () => {
+// 10回以上の入力と発声をくり返すため、ほかのテストより時間がかかる
+describe('よく使う言葉の自動登録', { timeout: 20000 }, () => {
   const learn = () => JSON.parse(localStorage.getItem(LEARNING_KEY) ?? '{"counts":{}}');
   const count = (t: string) => learn().counts[t]?.count ?? 0;
   const favs = () => JSON.parse(localStorage.getItem(STORAGE_KEYS.favorites)!) as { text: string; auto?: boolean; speechText?: string }[];
@@ -1112,5 +1113,98 @@ describe('バージョン番号の表示', () => {
     // タイトルのすぐ後ろ（同じヘッダーの中）にある
     expect(title.nextElementSibling).toBe(version);
     expect(version.closest('header')).toBe(title.closest('header'));
+  });
+});
+
+describe('ご意見・ご要望とアップデート情報', () => {
+  const openSettings = () => fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+  const dialog = () => screen.getByRole('dialog');
+
+  it('設定画面の一番上に「ご意見・ご要望」、2番目に「アップデート情報」、3番目に「声」がある', () => {
+    render(<App />);
+    openSettings();
+    const headings = within(dialog())
+      .getAllByRole('heading', { level: 3 })
+      .map((h) => h.textContent);
+    expect(headings.slice(0, 4)).toEqual(['ご意見・ご要望', 'アップデート情報', '声', '入力']);
+    expect(screen.getByText('こえのわについて、感想や改善してほしいことを教えてください。')).toBeInTheDocument();
+    expect(screen.getByText('Googleフォームが開きます。送信にはインターネット接続が必要です。')).toBeInTheDocument();
+    expect(screen.getByText('新しくなった機能や改善内容を確認できます。')).toBeInTheDocument();
+  });
+
+  it('「ご意見・ご要望を送る」は指定のフォームを新しいタブで安全に開き、文章や保存データを URL に付けない', () => {
+    localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify([{ id: 'a', text: 'ひみつのことば' }]));
+    render(<App />);
+    typeSeion('ないしん');
+    openSettings();
+    const link = within(dialog()).getByRole('link', { name: 'ご意見・ご要望を送る' });
+    expect(link).toHaveAttribute('href', 'https://forms.gle/3S63VY9CuCcA5hzNA');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    const href = link.getAttribute('href')!;
+    expect(href).not.toMatch(/[?#]/);
+    expect(href).not.toContain(encodeURIComponent('ないしん'));
+    fireEvent.click(link);
+    // 入力中の文章と設定画面はそのまま
+    expect(textOf()).toBe('ないしん');
+    expect(dialog()).toHaveAccessibleName('せってい');
+  });
+
+  it('オフラインのときは、フォームを開けないことを知らせる', () => {
+    const spy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    render(<App />);
+    openSettings();
+    expect(screen.getByText('いまはインターネットにつながっていないため、フォームを開けません。')).toBeInTheDocument();
+    spy.mockRestore();
+  });
+
+  it('アップデート情報を開くと、同じパネルの中で新しい順に表示し、閉じると設定画面に戻る', () => {
+    render(<App />);
+    typeSeion('あいう');
+    openSettings();
+    // 設定の状態（開いた項目）が戻ったあとも残ることを確かめるため、1つ切り替えておく
+    fireEvent.click(within(dialog()).getByRole('checkbox', { name: /文字を押したときに声を出す/ }));
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'アップデート情報を見る' }));
+
+    // モーダルは1つだけ。タイトルが「アップデート情報」になり、見出しにフォーカスが移る
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(dialog()).toHaveAccessibleName('アップデート情報');
+    expect(screen.getByRole('heading', { level: 3, name: 'アップデート情報' })).toHaveFocus();
+    const entries = screen.getAllByTestId(/^changelog-/).map((el) => el.getAttribute('data-testid'));
+    expect(entries).toEqual(['changelog-1.1.0', 'changelog-1.0.0']);
+    const latest = within(screen.getByTestId('changelog-1.1.0'));
+    expect(latest.getByText('v1.1.0')).toBeInTheDocument();
+    expect(latest.getByText('最新')).toBeInTheDocument();
+    expect(latest.getByRole('heading', { name: 'ご意見・ご要望とアップデート情報を追加' })).toBeInTheDocument();
+    expect(latest.getByText('ご意見・ご要望を送れるようになりました。')).toBeInTheDocument();
+    const old = within(screen.getByTestId('changelog-1.0.0'));
+    expect(old.getByRole('heading', { name: 'こえのわの基本機能' })).toBeInTheDocument();
+    expect(old.getByText('文字を押すたびに、その文字を読み上げる機能を追加しました。')).toBeInTheDocument();
+    // 設定の項目は隠れている
+    expect(screen.queryByRole('heading', { level: 3, name: '声' })).not.toBeInTheDocument();
+
+    // 「せっていにもどる」で設定画面へ。押したボタンにフォーカスが戻り、設定の状態も残る
+    fireEvent.click(screen.getByRole('button', { name: 'せっていにもどる' }));
+    expect(dialog()).toHaveAccessibleName('せってい');
+    expect(within(dialog()).getByRole('button', { name: 'アップデート情報を見る' })).toHaveFocus();
+    expect(within(dialog()).getByRole('checkbox', { name: /文字を押したときに声を出す/ })).toBeChecked();
+
+    // 上の「とじる」も、Escape キーも、アップデート情報では設定画面に戻るだけ
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'アップデート情報を見る' }));
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'とじる' }));
+    expect(dialog()).toHaveAccessibleName('せってい');
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'アップデート情報を見る' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(dialog()).toHaveAccessibleName('せってい');
+
+    // 設定画面の「とじる」でメイン画面へ。入力中の文章はそのまま
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'とじる' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(shown()).toBe('あいう');
+  });
+
+  it('ヘッダーのバージョン番号は v1.1.0（アップデート情報の最新と同じ）', () => {
+    render(<App />);
+    expect(screen.getByLabelText('バージョン 1.1.0')).toHaveTextContent('v1.1.0');
   });
 });

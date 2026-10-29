@@ -1439,3 +1439,97 @@ button.key-smallkana::before {
   margin-top: 0;
   margin-bottom: 16px;
 }
+
+/* ご意見・ご要望／アップデート情報（設定画面の上部） */
+.info-section .settings-note {
+  margin-bottom: 10px;
+}
+
+.info-link {
+  min-height: 52px;
+  padding: 8px 18px;
+  font-size: 17px;
+  text-decoration: none;
+  white-space: normal;
+  text-align: center;
+}
+
+/* 白い文字が読みやすいよう、アイコンのコーラル色より少し濃くしている */
+.btn-coral {
+  background: #c4523f;
+  border-color: #a3402f;
+  color: #fff;
+}
+
+.btn-coral:active {
+  background: #a9442f;
+}
+
+.changelog-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.changelog-title:focus {
+  outline: none;
+}
+
+.changelog-list {
+  list-style: none;
+  margin: 12px 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.changelog-entry {
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--coral);
+  border-radius: var(--radius);
+}
+
+.changelog-entry + .changelog-entry {
+  border-left-color: var(--line-strong);
+}
+
+.changelog-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--ink-sub);
+}
+
+.changelog-version {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.changelog-latest {
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--coral-pale);
+  color: #a3402f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.changelog-entry h4 {
+  margin: 6px 0 8px;
+  font-size: 17px;
+}
+
+.changelog-entry ul {
+  margin: 0;
+  padding-left: 1.3em;
+}
+
+.changelog-entry li {
+  margin-bottom: 6px;
+  font-size: 15px;
+  line-height: 1.6;
+}

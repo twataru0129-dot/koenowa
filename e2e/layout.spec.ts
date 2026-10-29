@@ -598,3 +598,89 @@ test.describe('バージョン番号', () => {
     await ctx.close();
   });
 });
+
+test.describe('ご意見・ご要望とアップデート情報', () => {
+  const FORM_URL = 'https://forms.gle/3S63VY9CuCcA5hzNA';
+  const openSettings = async (page: Page) => {
+    await page.getByRole('button', { name: 'せってい' }).filter({ visible: true }).first().click();
+    return page.getByRole('dialog');
+  };
+  const noOverflow = async (page: Page, width: number) => {
+    const o = await page.evaluate(() => {
+      const m = document.querySelector('.modal')!;
+      return { sw: document.documentElement.scrollWidth, mw: m.scrollWidth, cw: m.clientWidth };
+    });
+    expect(o.sw).toBeLessThanOrEqual(width);
+    expect(o.mw).toBeLessThanOrEqual(o.cw);
+  };
+
+  for (const vp of [
+    { name: 'iPhone SE 縦', width: 375, height: 548 },
+    { name: 'iPhone 14 縦', width: 390, height: 664 },
+    { name: 'iPhone 14 横', width: 844, height: 340 },
+    { name: 'iPad 縦', width: 820, height: 1180 },
+    { name: 'iPad 横', width: 1180, height: 820 },
+  ]) {
+    test(`${vp.name}：設定の上に2つの項目が並び、アップデート情報がはみ出さずに読める`, async ({ browser }, info) => {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
+      const page = await ctx.newPage();
+      await page.goto('./');
+      const dialog = await openSettings(page);
+      const headings = await dialog.locator('h3').evaluateAll((els) =>
+        els.filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => e.textContent),
+      );
+      expect(headings.slice(0, 3)).toEqual(['ご意見・ご要望', 'アップデート情報', '声']);
+      const link = dialog.getByRole('link', { name: 'ご意見・ご要望を送る' });
+      await expect(link).toBeInViewport();
+      const box = (await link.boundingBox())!;
+      expect(box.height).toBeGreaterThanOrEqual(48);
+      await page.screenshot({ path: info.outputPath('settings-top.png') });
+      await noOverflow(page, vp.width);
+
+      await dialog.getByRole('button', { name: 'アップデート情報を見る' }).click();
+      await expect(page.getByRole('dialog', { name: 'アップデート情報' })).toBeVisible();
+      await expect(page.getByTestId('changelog-1.1.0')).toBeVisible();
+      await expect(page.getByTestId('changelog-1.0.0')).toContainText('こえのわの基本機能');
+      await page.screenshot({ path: info.outputPath('changelog.png') });
+      await noOverflow(page, vp.width);
+      await page.getByRole('button', { name: 'せっていにもどる' }).click();
+      await expect(page.getByRole('dialog', { name: 'せってい' })).toBeVisible();
+      await ctx.close();
+    });
+  }
+
+  test('フォームは新しいタブで指定の URL のまま開き、こえのわの文章は残る', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 664 }, hasTouch: true, isMobile: true });
+    // テストでは Google へは接続せず、代わりの画面を返す
+    await ctx.route('https://forms.gle/**', (route) => route.fulfill({ contentType: 'text/html', body: '<p>form</p>' }));
+    const page = await ctx.newPage();
+    await page.goto('./');
+    for (const ch of ['あ', 'い', 'う']) await page.getByRole('button', { name: ch, exact: true }).tap();
+    const dialog = await openSettings(page);
+    const [popup] = await Promise.all([ctx.waitForEvent('page'), dialog.getByRole('link', { name: 'ご意見・ご要望を送る' }).click()]);
+    await popup.waitForLoadState();
+    expect(popup.url()).toBe(FORM_URL);
+    // noopener のため、開いたページから元のページを操作できない
+    expect(await popup.evaluate(() => window.opener)).toBeNull();
+    await popup.close();
+    await page.reload();
+    await expect(page.getByTestId('text-display')).toHaveText(/あいう/);
+    await ctx.close();
+  });
+
+  test('通信がなくてもアップデート情報を見られる', async ({ page, context }) => {
+    await page.goto('./');
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await page.reload();
+    await context.setOffline(true);
+    await page.reload();
+    await expect(page.locator('.app-version')).toHaveText('v1.1.0');
+    const dialog = await openSettings(page);
+    await expect(dialog.getByText('いまはインターネットにつながっていないため、フォームを開けません。')).toBeVisible();
+    await dialog.getByRole('button', { name: 'アップデート情報を見る' }).click();
+    await expect(page.getByTestId('changelog-1.1.0')).toContainText('ご意見・ご要望とアップデート情報を追加');
+    await context.setOffline(false);
+  });
+});
