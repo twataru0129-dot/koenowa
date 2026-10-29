@@ -46,9 +46,16 @@ function serviceWorker(): Plugin {
   };
 }
 
+/** 画面に表示するバージョン番号。package.json の version だけを管理元にする */
+const appVersion = (JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }).version;
+
 export default defineConfig({
   // GitHub Pages 等のサブパスでも動くよう相対パスで出力する
   base: './',
+  // ビルド時に package.json の version を埋め込む（画面のコードには番号を書かない）
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [react(), serviceWorker()],
   test: {
     environment: 'jsdom',

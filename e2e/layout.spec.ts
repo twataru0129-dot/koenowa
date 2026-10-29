@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 const SEION = [
@@ -543,4 +545,56 @@ test.describe('文字を押したときに声を出す', () => {
       await ctx.close();
     });
   }
+});
+
+test.describe('バージョン番号', () => {
+  const version = (JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string }).version;
+
+  for (const vp of [
+    { name: 'iPhone SE 1世代 縦', width: 320, height: 548 },
+    { name: 'iPhone SE 縦', width: 375, height: 548 },
+    { name: 'iPhone 14 縦', width: 390, height: 664 },
+    { name: 'iPhone 15 Pro Max 縦', width: 430, height: 839 },
+    { name: 'iPad 縦', width: 820, height: 1180 },
+    { name: 'iPad 横', width: 1180, height: 820 },
+  ]) {
+    test(`${vp.name}：「こえのわ」の右に v${version} を1行で表示し、せってい と重ならない`, async ({ browser }, info) => {
+      const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
+      const page = await ctx.newPage();
+      await page.goto('./');
+      const ver = page.locator('.app-version');
+      await expect(ver).toHaveText(`v${version}`);
+      await expect(ver).toBeInViewport({ ratio: 1 });
+      const r = await page.evaluate(() => {
+        const box = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
+        const v = document.querySelector('.app-version')!;
+        return {
+          title: box('.brand h1'),
+          ver: box('.app-version'),
+          settings: box('.btn-settings'),
+          fontSize: parseFloat(getComputedStyle(v).fontSize),
+          titleSize: parseFloat(getComputedStyle(document.querySelector('.brand h1')!).fontSize),
+          lineHeight: v.getBoundingClientRect().height,
+        };
+      });
+      expect(r.ver.left).toBeGreaterThanOrEqual(r.title.right);
+      expect(r.ver.left - r.title.right).toBeLessThanOrEqual(12);
+      expect(r.ver.right).toBeLessThan(r.settings.left);
+      expect(r.fontSize).toBeGreaterThanOrEqual(11);
+      expect(r.fontSize).toBeLessThanOrEqual(13);
+      expect(r.fontSize).toBeLessThan(r.titleSize);
+      expect(r.lineHeight).toBeLessThan(r.fontSize * 1.6); // 1行
+      await page.screenshot({ path: info.outputPath('header.png'), clip: { x: 0, y: 0, width: vp.width, height: 60 } });
+      await ctx.close();
+    });
+  }
+
+  test('iPhone 横：ヘッダーは今までどおり表示しない', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 844, height: 340 }, hasTouch: true, isMobile: true });
+    const page = await ctx.newPage();
+    await page.goto('./');
+    await expect(page.locator('.app-header')).toBeHidden();
+    await expect(page.locator('.app-version')).toBeHidden();
+    await ctx.close();
+  });
 });

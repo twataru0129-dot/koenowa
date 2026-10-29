@@ -209,6 +209,9 @@ export default function App() {
         <div className="brand">
           <img src="./icons/icon-192.png" alt="" className="brand-icon" />
           <h1>こえのわ</h1>
+          <span className="app-version" aria-label={`バージョン ${__APP_VERSION__}`}>
+            v{__APP_VERSION__}
+          </span>
         </div>
         <button type="button" className="btn btn-settings" onClick={() => setPanel('settings')}>
           <Icon name="gear" />
