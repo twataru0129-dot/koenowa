@@ -676,7 +676,8 @@ test.describe('ご意見・ご要望とアップデート情報', () => {
     await page.reload();
     await context.setOffline(true);
     await page.reload();
-    await expect(page.locator('.app-version')).toHaveText('v1.1.0');
+    const { version } = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version: string };
+    await expect(page.locator('.app-version')).toHaveText(`v${version}`);
     const dialog = await openSettings(page);
     await expect(dialog.getByText('いまはインターネットにつながっていないため、フォームを開けません。')).toBeVisible();
     await dialog.getByRole('button', { name: 'アップデート情報を見る' }).click();

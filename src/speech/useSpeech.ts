@@ -12,6 +12,12 @@ import {
 
 /** 文字ごとの読み上げの速さ */
 export const KEY_ECHO_RATE = 0.95;
+/**
+ * 女性の声（Kyoko など）で文字ごとに読むときの速さ。
+ * iPhone で「あ」が「あっ」と短く聞こえたため、少しゆっくりにしている。
+ * 端末の標準音声（自動）・男性・性別不明の声は KEY_ECHO_RATE のまま
+ */
+export const KEY_ECHO_FEMALE_RATE = 0.8;
 
 let sharedSpeaker: Speaker | null = null;
 
@@ -80,11 +86,15 @@ export function useSpeech(settings: Settings) {
     [speaker, rate, syllable, settings.voiceMode, settings.voiceURI, settings.allowOnlineVoices, settings.speechStyle],
   );
 
-  /** 押した1文字を読む。速さは文章の設定と関係なく、聞き取りやすい「ふつう」（0.95）に固定する */
+  /**
+   * 押した1文字を読む。速さは文章の設定と関係なく、聞き取りやすい「ふつう」（0.95）に固定する。
+   * 女性の声と確認できる声のときだけ 0.80 にする（実際に使う声で判断する）
+   */
   const speakChar = useCallback(
     (char: string): SpeakResult =>
       speaker.speakChar(char, {
         rate: KEY_ECHO_RATE,
+        femaleRate: KEY_ECHO_FEMALE_RATE,
         voiceURI: settings.voiceURI,
         allowOnlineVoices: settings.allowOnlineVoices,
         useSystemVoice: settings.voiceMode === 'system',
