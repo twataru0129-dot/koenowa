@@ -22,6 +22,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.1.1',
+    title: '女性の声の1文字読み上げを調整',
+    items: ['女性音声の1文字読み上げを、よりゆっくり聞き取れるように調整しました。'],
+  },
+  {
     version: '1.1.0',
     title: 'ご意見・ご要望とアップデート情報を追加',
     items: [

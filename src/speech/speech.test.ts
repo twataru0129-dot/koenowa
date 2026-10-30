@@ -427,3 +427,51 @@ describe('文字の読み上げでエラーが起きたとき', () => {
     });
   });
 });
+
+describe('1文字の読み上げ：女性の声だけ少しゆっくり', () => {
+  const base = { rate: 0.95, femaleRate: 0.8, voiceURI: null, allowOnlineVoices: false };
+  const withVoice = (uri: string) => ({ ...base, voiceURI: uri, useSystemVoice: false });
+
+  it('女性の声（Kyoko・O-ren）は femaleRate、文字と声の高さはそのまま', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    speaker.speakChar('あ', withVoice('com.apple.voice.compact.ja-JP.Kyoko'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.8, pitch: 1 });
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
+    synth.finish();
+    speaker.speakChar('す', withVoice('com.apple.voice.compact.ja-JP.O-ren'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'す', rate: 0.8, pitch: 1 });
+  });
+
+  it('男性の声（Otoya・Hattori）は 0.95 のまま', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    speaker.speakChar('あ', withVoice('com.apple.voice.compact.ja-JP.Otoya'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.95 });
+    synth.finish();
+    speaker.speakChar('い', withVoice('com.apple.voice.compact.ja-JP.Hattori'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'い', rate: 0.95 });
+  });
+
+  it('性別がわからない声は 0.95 のまま', () => {
+    const { synth, speaker } = make([fakeVoice('ja-jp-x-htm-local', 'ja-JP', true, 'x')]);
+    speaker.speakChar('あ', withVoice('x'));
+    expect(synth.spoken.at(-1)).toMatchObject({ rate: 0.95 });
+  });
+
+  it('端末の標準音声（自動）は、取得できる声が Kyoko だけでも女性とみなさず 0.95・声の指定なし', () => {
+    const { synth, speaker } = make([fakeVoice('Kyoko', 'ja-JP', true, 'com.apple.voice.compact.ja-JP.Kyoko')]);
+    speaker.speakChar('あ', { ...base, useSystemVoice: true });
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.95, voice: null, lang: 'ja-JP', pitch: 1 });
+  });
+
+  it('声の一覧が取れないときも 0.95', () => {
+    const { synth, speaker } = make([]);
+    speaker.speakChar('あ', { ...base, useSystemVoice: false });
+    expect(synth.spoken.at(-1)).toMatchObject({ rate: 0.95, voice: null });
+  });
+
+  it('文章の読み上げの速さは変わらない（女性の声でも指定どおり）', () => {
+    const { synth, speaker } = make(IOS_JA_VOICES);
+    speaker.speak('あいす', { ...opts, rate: 0.95, voiceURI: 'com.apple.voice.compact.ja-JP.Kyoko' });
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あいす', rate: 0.95 });
+  });
+});

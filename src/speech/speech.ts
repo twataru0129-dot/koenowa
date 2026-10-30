@@ -402,7 +402,16 @@ export class Speaker {
    * 待ち行列は「話している1つ＋次の1つ」までにし、それより速く押されたときは
    * たまった分を捨てて最新の文字から読み直す（古い文字が延々と続かないように）。
    */
-  speakChar(char: string, options: Omit<SpeakOptions, 'style' | 'syllable'>): SpeakResult {
+  speakChar(
+    char: string,
+    options: Omit<SpeakOptions, 'style' | 'syllable'> & {
+      /**
+       * 女性の声と確認できる声（voiceGender が 'female'）で読むときだけ使う速さ。
+       * 端末の標準音声（声を指定しない）・男性・性別不明の声には使わない
+       */
+      femaleRate?: number;
+    },
+  ): SpeakResult {
     if (!isEchoChar(char)) return { ok: false, reason: 'empty' };
     if (!this.synth || !this.Utterance) return { ok: false, reason: 'unsupported' };
     let voice: VoiceInfo | null | undefined;
@@ -425,7 +434,7 @@ export class Speaker {
     try {
       u.lang = voice?.lang ?? 'ja-JP';
       if (voice) u.voice = voice.voice;
-      u.rate = options.rate;
+      u.rate = voice?.gender === 'female' && options.femaleRate !== undefined ? options.femaleRate : options.rate;
       u.pitch = 1;
       u.volume = 1;
     } catch {

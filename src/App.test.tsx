@@ -1171,10 +1171,16 @@ describe('ご意見・ご要望とアップデート情報', () => {
     expect(dialog()).toHaveAccessibleName('アップデート情報');
     expect(screen.getByRole('heading', { level: 3, name: 'アップデート情報' })).toHaveFocus();
     const entries = screen.getAllByTestId(/^changelog-/).map((el) => el.getAttribute('data-testid'));
-    expect(entries).toEqual(['changelog-1.1.0', 'changelog-1.0.0']);
+    expect(entries).toEqual(['changelog-1.1.1', 'changelog-1.1.0', 'changelog-1.0.0']);
+    expect(within(screen.getByTestId('changelog-1.1.1')).getByText('最新')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('changelog-1.1.1')).getByText(
+        '女性音声の1文字読み上げを、よりゆっくり聞き取れるように調整しました。',
+      ),
+    ).toBeInTheDocument();
     const latest = within(screen.getByTestId('changelog-1.1.0'));
     expect(latest.getByText('v1.1.0')).toBeInTheDocument();
-    expect(latest.getByText('最新')).toBeInTheDocument();
+    expect(latest.queryByText('最新')).not.toBeInTheDocument();
     expect(latest.getByRole('heading', { name: 'ご意見・ご要望とアップデート情報を追加' })).toBeInTheDocument();
     expect(latest.getByText('ご意見・ご要望を送れるようになりました。')).toBeInTheDocument();
     const old = within(screen.getByTestId('changelog-1.0.0'));
@@ -1203,8 +1209,84 @@ describe('ご意見・ご要望とアップデート情報', () => {
     expect(shown()).toBe('あいう');
   });
 
-  it('ヘッダーのバージョン番号は v1.1.0（アップデート情報の最新と同じ）', () => {
+  it('ヘッダーのバージョン番号は package.json と同じで、アップデート情報の最新と一致する', () => {
     render(<App />);
-    expect(screen.getByLabelText('バージョン 1.1.0')).toHaveTextContent('v1.1.0');
+    expect(pkg.version).toBe('1.1.1');
+    expect(screen.getByLabelText(`バージョン ${pkg.version}`)).toHaveTextContent(`v${pkg.version}`);
+  });
+});
+
+describe('1文字の読み上げの速さ（女性の声だけ 0.80）', () => {
+  const setVoices = () => {
+    synth.voiceList = [...IOS_JA_VOICES];
+  };
+  const start = (settings: Record<string, unknown>) => {
+    setVoices();
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify({ keyEcho: true, ...settings }));
+    return render(<App />);
+  };
+  const KYOKO = 'com.apple.voice.compact.ja-JP.Kyoko';
+  const OTOYA = 'com.apple.voice.compact.ja-JP.Otoya';
+
+  it('女性の声（Kyoko）を選んでいると 1文字は 0.80。「はっせい」は設定の速さのまま', () => {
+    start({ voiceMode: 'specific', voiceURI: KYOKO, rate: 'slow' });
+    for (const ch of ['あ', 'い', 'す']) {
+      tap(key(ch));
+      expect(synth.spoken.at(-1)).toMatchObject({ text: ch, rate: 0.8, pitch: 1 });
+      expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
+      synth.finish();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あいす', rate: 0.6 });
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
+    expect(shown()).toBe('あいす');
+  });
+
+  it('男性の声（Otoya）は 0.95 のまま', () => {
+    start({ voiceMode: 'specific', voiceURI: OTOYA });
+    tap(key('あ'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.95 });
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Otoya');
+  });
+
+  it('端末の標準音声（自動）は 0.95 のまま、声も指定しない', () => {
+    start({ voiceMode: 'system' });
+    tap(key('あ'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.95, voice: null, lang: 'ja-JP' });
+    synth.finish();
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.95, voice: null });
+  });
+
+  it('続けて押すと最新の文字を読み、「はっせい」で文章に切り替わる。オフにすると読まない', () => {
+    start({ voiceMode: 'specific', voiceURI: KYOKO });
+    for (const ch of ['あ', 'い', 'す', 'か']) tap(key(ch));
+    expect(synth.active.length).toBeLessThanOrEqual(2);
+    expect(synth.active.at(-1)).toMatchObject({ text: 'か', rate: 0.8 });
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(synth.active.map((u) => u.text)).toEqual(['あいすか']);
+    expect(synth.active[0].rate).toBe(0.95);
+    // オフにすると音は出ない
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: /文字を押したときに声を出す/ }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'とじる' }));
+    const before = synth.spoken.length;
+    tap(key('き'));
+    expect(synth.spoken).toHaveLength(before);
+    expect(shown()).toBe('あいすかき');
+  });
+
+  it('保存データは変わらず、1文字の読み上げは自動登録に数えない', () => {
+    start({ voiceMode: 'specific', voiceURI: KYOKO });
+    const settingsBefore = localStorage.getItem(STORAGE_KEYS.settings);
+    for (const ch of ['ね', 'む', 'い']) {
+      tap(key(ch));
+      synth.finish();
+    }
+    expect(JSON.parse(localStorage.getItem(LEARNING_KEY) ?? '{"counts":{}}').counts).toEqual({});
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!)).toEqual(JSON.parse(settingsBefore!));
+    expect(Object.keys(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!))).not.toContain('femaleRate');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(JSON.parse(localStorage.getItem(LEARNING_KEY)!).counts['ねむい'].count).toBe(1);
   });
 });
