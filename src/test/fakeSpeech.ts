@@ -70,3 +70,37 @@ export class FakeSynth {
     was.forEach((u) => u.onend?.());
   }
 }
+
+/** テスト用の録音プレーヤー（再生した文字を記録する） */
+export class FakeClipPlayer {
+  available = new Set(['あ', 'い', 'う', 'え', 'お']);
+  played: string[] = [];
+  stopCount = 0;
+  preloadCount = 0;
+  playing: string | null = null;
+  pendingFail: (() => void) | null = null;
+  /** true にすると、次の再生を失敗させる */
+  failNext = false;
+  has(char: string) {
+    return this.available.has(char);
+  }
+  play(char: string, onFail: () => void) {
+    this.stop();
+    this.played.push(char);
+    if (this.failNext) {
+      this.failNext = false;
+      onFail();
+      return;
+    }
+    this.playing = char;
+    this.pendingFail = onFail;
+  }
+  stop() {
+    this.stopCount++;
+    this.playing = null;
+    this.pendingFail = null;
+  }
+  preload() {
+    this.preloadCount++;
+  }
+}

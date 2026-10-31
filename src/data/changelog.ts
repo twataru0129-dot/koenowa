@@ -22,6 +22,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.1.2',
+    title: 'Kyoko の「あ・い・う・え・お」を聞き取りやすく',
+    items: [
+      '声に Kyoko を選んでいるとき、文字盤の「あ・い・う・え・お」を押したときの声を、聞き取りやすい録音の声にしました。',
+    ],
+  },
+  {
     version: '1.1.1',
     title: '女性の声の1文字読み上げを調整',
     items: ['女性音声の1文字読み上げを、よりゆっくり聞き取れるように調整しました。'],

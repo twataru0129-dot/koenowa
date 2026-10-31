@@ -1,3 +1,5 @@
+import { isKyokoVoice, type ClipPlayer } from './clips';
+
 /**
  * Web Speech API（SpeechSynthesis）による日本語の読み上げ。
  *
@@ -290,6 +292,7 @@ export interface SpeakerEvents {
 }
 
 export class Speaker {
+  private clips: ClipPlayer | null;
   private synth: SpeechSynthesis | null;
   private Utterance: typeof SpeechSynthesisUtterance | null;
   private current: SpeechSynthesisUtterance | null = null;
@@ -306,10 +309,13 @@ export class Speaker {
       ? window.SpeechSynthesisUtterance
       : null,
     events: SpeakerEvents = {},
+    /** 「あ・い・う・え・お」の録音（なければ常に音声合成で読む） */
+    clips: ClipPlayer | null = null,
   ) {
     this.synth = synth;
     this.Utterance = Utterance;
     this.events = events;
+    this.clips = clips;
   }
 
   get supported(): boolean {
@@ -426,6 +432,27 @@ export class Speaker {
     }
     // 文章を読んでいる途中なら止める（新しく入力を始めたため）
     if (this.current) this.stop();
+    const rate = voice?.gender === 'female' && options.femaleRate !== undefined ? options.femaleRate : options.rate;
+    const chosen = voice ?? undefined;
+
+    // Kyoko を選んでいるときの「あ・い・う・え・お」だけ、録音（Flash TTS）を再生する。
+    // 録音を読み込めていない・再生できなかったときは、これまでどおり Kyoko で読む
+    const clips = this.clips;
+    if (chosen && clips && isKyokoVoice(chosen.name) && clips.has(char)) {
+      if (this.chars.length > 0) {
+        this.chars = [];
+        this.synth.cancel();
+      }
+      clips.play(char, () => this.synthChar(char, chosen, rate));
+      return { ok: true };
+    }
+    this.clips?.stop();
+    return this.synthChar(char, chosen, rate);
+  }
+
+  /** 1文字を音声合成で読む（文字ごとの待ち行列は「話している1つ＋次の1つ」まで） */
+  private synthChar(char: string, voice: VoiceInfo | undefined, rate: number): SpeakResult {
+    if (!this.synth || !this.Utterance) return { ok: false, reason: 'unsupported' };
     if (this.chars.length >= CHAR_QUEUE_MAX) {
       this.chars = [];
       this.synth.cancel();
@@ -434,7 +461,7 @@ export class Speaker {
     try {
       u.lang = voice?.lang ?? 'ja-JP';
       if (voice) u.voice = voice.voice;
-      u.rate = voice?.gender === 'female' && options.femaleRate !== undefined ? options.femaleRate : options.rate;
+      u.rate = rate;
       u.pitch = 1;
       u.volume = 1;
     } catch {
@@ -457,14 +484,21 @@ export class Speaker {
     return { ok: true };
   }
 
+  /** 「あ・い・う・え・お」の録音を読み込んでおく（オフラインでも Service Worker の保存から読む） */
+  preloadClips() {
+    this.clips?.preload();
+  }
+
   /** 文字ごとの読み上げだけを止める（文章の読み上げ中なら何もしない） */
   stopChars() {
+    this.clips?.stop();
     if (!this.synth || this.chars.length === 0 || this.current) return;
     this.chars = [];
     this.synth.cancel();
   }
 
   stop() {
+    this.clips?.stop();
     if (!this.synth) return;
     const had = this.current !== null;
     this.current = null;
