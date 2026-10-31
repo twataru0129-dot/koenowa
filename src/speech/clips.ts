@@ -56,7 +56,9 @@ function defaultDeps(): AudioClipPlayerDeps {
     load: async (path) => {
       const res = await fetch(`${base}${path}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return URL.createObjectURL(await res.blob());
+      // 公開先によっては .m4a の種類（Content-Type）が正しく付かず、iOS Safari が再生できないため、
+      // 受け取った中身に audio/mp4 の種類を付け直してから再生用の URL にする
+      return URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: 'audio/mp4' }));
     },
     createAudio: (url) => {
       const a = new Audio(url);

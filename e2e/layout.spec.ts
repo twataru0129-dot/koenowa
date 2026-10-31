@@ -749,6 +749,12 @@ test.describe('Kyoko の「あ・い・う・え・お」の録音', () => {
     let s = await state();
     expect(s.__played).toHaveLength(2);
     expect(s.__played.every((src) => src.startsWith('blob:'))).toBe(true);
+    // 公開先の Content-Type に関係なく、iOS Safari が再生できる種類（audio/mp4）にしている
+    const types = await page.evaluate(
+      async (srcs) => Promise.all(srcs.map(async (src) => (await (await fetch(src)).blob()).type)),
+      s.__played,
+    );
+    expect(types).toEqual(['audio/mp4', 'audio/mp4']);
     expect(s.__spoken).toEqual(['か']);
     await page.getByRole('button', { name: 'はっせい' }).tap();
     s = await state();
