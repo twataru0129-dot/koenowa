@@ -686,7 +686,7 @@ test.describe('ご意見・ご要望とアップデート情報', () => {
   });
 });
 
-test.describe('Kyoko の「あ・い・う・え・お」の録音', () => {
+test.describe('Kyoko の1文字タップの録音（71音）', () => {
   // 再生と音声合成を記録する（実際の音は出さない）。声は Kyoko だけを返す
   const record = () => {
     const w = window as unknown as { __played: string[]; __spoken: string[] };
@@ -721,7 +721,7 @@ test.describe('Kyoko の「あ・い・う・え・お」の録音', () => {
     }
   };
 
-  test('通信がなくても、あ・お は録音、か は Kyoko で読む。はっせいは文章全体', async ({ browser }) => {
+  test('通信がなくても、71音は録音、小さい文字は Kyoko で読む。はっせいは文章全体', async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 664 }, hasTouch: true, isMobile: true });
     await ctx.addInitScript(record);
     const page = await ctx.newPage();
@@ -734,7 +734,7 @@ test.describe('Kyoko の「あ・い・う・え・お」の録音', () => {
     await page.reload();
     // 録音の読み込み（Service Worker の保存から）を待つ
     await page.waitForFunction(() =>
-      performance.getEntriesByType('resource').filter((e) => /flash-tts-aiueo\/[aiueo]\.m4a$/.test(e.name)).length >= 5,
+      performance.getEntriesByType('resource').filter((e) => /flash-tts-(aiueo|kana)\/[a-z]+\.m4a$/.test(e.name)).length >= 71,
     );
     await page.waitForTimeout(200);
     const state = () =>
@@ -744,22 +744,27 @@ test.describe('Kyoko の「あ・い・う・え・お」の録音', () => {
       });
     await page.getByRole('button', { name: 'あ', exact: true }).tap();
     await page.getByRole('button', { name: 'か', exact: true }).tap();
-    await page.getByRole('button', { name: 'お', exact: true }).tap();
+    await page.getByRole('button', { name: /^3ページ目/ }).click();
+    await page.getByRole('button', { name: 'ちいさい や' }).tap();
+    await page.getByRole('button', { name: /^2ページ目/ }).click();
+    await page.getByRole('button', { name: 'ど', exact: true }).tap();
     await page.waitForTimeout(100);
     let s = await state();
-    expect(s.__played).toHaveLength(2);
+    expect(s.__played).toHaveLength(3);
     expect(s.__played.every((src) => src.startsWith('blob:'))).toBe(true);
     // 公開先の Content-Type に関係なく、iOS Safari が再生できる種類（audio/mp4）にしている
     const types = await page.evaluate(
       async (srcs) => Promise.all(srcs.map(async (src) => (await (await fetch(src)).blob()).type)),
       s.__played,
     );
-    expect(types).toEqual(['audio/mp4', 'audio/mp4']);
-    expect(s.__spoken).toEqual(['か']);
+    expect(types).toEqual(['audio/mp4', 'audio/mp4', 'audio/mp4']);
+    // 3つとも別の録音（あ・か・ど）
+    expect(new Set(s.__played).size).toBe(3);
+    expect(s.__spoken).toEqual(['ゃ']);
     await page.getByRole('button', { name: 'はっせい' }).tap();
     s = await state();
-    expect(s.__spoken).toEqual(['か', 'あかお']);
-    await expect(page.getByTestId('text-display')).toHaveText(/^あかお/);
+    expect(s.__spoken).toEqual(['ゃ', 'あかゃど']);
+    await expect(page.getByTestId('text-display')).toHaveText(/^あかゃど/);
     await ctx.setOffline(false);
     await ctx.close();
   });

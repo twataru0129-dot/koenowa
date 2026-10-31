@@ -1292,7 +1292,7 @@ describe('1文字の読み上げの速さ（女性の声だけ 0.80）', () => {
   });
 });
 
-describe('Kyoko の「あ・い・う・え・お」の録音（画面からの操作）', () => {
+describe('Kyoko の1文字タップの録音（画面からの操作）', () => {
   const KYOKO = 'com.apple.voice.compact.ja-JP.Kyoko';
   let clips: FakeClipPlayer;
   const start = (settings: Record<string, unknown>) => {
@@ -1321,23 +1321,33 @@ describe('Kyoko の「あ・い・う・え・お」の録音（画面からの�
     expect(clips.preloadCount).toBe(0);
   });
 
-  it('「あいか」と押すと「あ」「い」は録音、「か」は Kyoko。「はっせい」は文章全体を設定の速さで読む', () => {
+  it('「きょうがっこう」と押すと、かなは録音、小さい文字は Kyoko。「はっせい」は文章全体を設定の速さで読む', () => {
     start({ keyEcho: true, voiceMode: 'specific', voiceURI: KYOKO, rate: 'slow' });
-    tap(key('あ'));
-    tap(key('い'));
-    expect(clips.played).toEqual(['あ', 'い']);
-    expect(synth.spoken).toHaveLength(0);
-    tap(key('か'));
-    expect(synth.spoken.at(-1)).toMatchObject({ text: 'か', rate: 0.8 });
+    tap(key('き'));
+    pageTo(3);
+    tap(key('ちいさい よ'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'ょ', rate: 0.8 });
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
     expect(clips.playing).toBeNull();
     synth.finish();
-    tap(key('お'));
-    expect(clips.playing).toBe('お');
+    pageTo(1);
+    tap(key('う'));
+    pageTo(2);
+    tap(key('が'));
+    pageTo(3);
+    tap(key('ちいさい つ'));
+    synth.finish();
+    pageTo(1);
+    tap(key('こ'));
+    tap(key('う'));
+    expect(clips.played).toEqual(['き', 'う', 'が', 'こ', 'う']);
+    expect(synth.spoken.map((u) => u.text)).toEqual(['ょ', 'っ']);
+    expect(clips.playing).toBe('う');
     fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
     expect(clips.playing).toBeNull();
-    expect(synth.active.map((u) => u.text)).toEqual(['あいかお']);
+    expect(synth.active.map((u) => u.text)).toEqual(['きょうがっこう']);
     expect(synth.active[0].rate).toBe(0.6);
-    expect(shown()).toBe('あいかお');
+    expect(shown()).toBe('きょうがっこう');
   });
 
   it('文字の読み上げをオフにすると再生中の録音を止め、以後は鳴らさない', () => {

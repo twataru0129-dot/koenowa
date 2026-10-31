@@ -1,3 +1,5 @@
+import { FLASH_TTS_CLIPS } from '../speech/clips';
+
 /** テスト用の SpeechSynthesis の代わり */
 export class FakeUtterance {
   text: string;
@@ -73,7 +75,8 @@ export class FakeSynth {
 
 /** テスト用の録音プレーヤー（再生した文字を記録する） */
 export class FakeClipPlayer {
-  available = new Set(['あ', 'い', 'う', 'え', 'お']);
+  /** 本番と同じく、録音がある71音 */
+  available = new Set(Object.keys(FLASH_TTS_CLIPS));
   played: string[] = [];
   stopCount = 0;
   preloadCount = 0;

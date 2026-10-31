@@ -23,9 +23,10 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: '1.1.2',
-    title: 'Kyoko の「あ・い・う・え・お」を聞き取りやすく',
+    title: 'Kyoko の1文字読み上げを聞き取りやすく',
     items: [
-      '声に Kyoko を選んでいるとき、文字盤の「あ・い・う・え・お」を押したときの声を、聞き取りやすい録音の声にしました。',
+      '声に Kyoko を選んでいるとき、文字盤の清音・濁音・半濁音（71文字）を押したときの声を、聞き取りやすい録音の声にしました。',
+      '小さい文字（ゃ・っ など）は、これまでどおり Kyoko の声で読みます。',
     ],
   },
   {

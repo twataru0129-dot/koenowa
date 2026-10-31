@@ -1,3 +1,4 @@
+import { FLASH_TTS_CLIPS } from './clips';
 import { FakeClipPlayer, FakeSynth, FakeUtterance, fakeVoice, IOS_JA_VOICES } from '../test/fakeSpeech';
 import {
   buildSpeechText,
@@ -476,7 +477,7 @@ describe('1文字の読み上げ：女性の声だけ少しゆっくり', () => 
   });
 });
 
-describe('Kyoko の「あ・い・う・え・お」だけ録音を再生する', () => {
+describe('Kyoko の1文字タップは、録音のある文字だけ録音を再生する', () => {
   const KYOKO = 'com.apple.voice.compact.ja-JP.Kyoko';
   const KYOKO_EN = 'com.apple.voice.enhanced.ja-JP.Kyoko';
   const charOpts = (voiceURI: string | null, useSystemVoice = false) => ({
@@ -507,9 +508,17 @@ describe('Kyoko の「あ・い・う・え・お」だけ録音を再生する'
     expect(synth.spoken).toHaveLength(0);
   });
 
-  it('Kyoko でもほかの文字は、これまでどおり Kyoko（0.80）で読む', () => {
+  it('Kyoko では、録音のある71音（清音・濁音・半濁音）はすべて録音を再生する', () => {
     const { synth, clips, speaker } = makeWithClips();
-    for (const ch of ['か', 'が', 'ぁ', 'ゃ', 'ん']) {
+    const all = Object.keys(FLASH_TTS_CLIPS);
+    for (const ch of all) speaker.speakChar(ch, charOpts(KYOKO));
+    expect(clips.played).toEqual(all);
+    expect(synth.spoken).toHaveLength(0);
+  });
+
+  it('Kyoko でも録音のない文字（小さい文字）は、これまでどおり Kyoko（0.80）で読む', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    for (const ch of ['ぁ', 'ぃ', 'ゃ', 'ょ', 'っ', 'ゎ']) {
       speaker.speakChar(ch, charOpts(KYOKO));
       expect(synth.spoken.at(-1)).toMatchObject({ text: ch, rate: 0.8 });
       expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
@@ -552,18 +561,19 @@ describe('Kyoko の「あ・い・う・え・お」だけ録音を再生する'
 
   it('録音と音声合成は重ならない：どちらかを鳴らすときは、もう一方を止める', () => {
     const { synth, clips, speaker } = makeWithClips();
-    speaker.speakChar('か', charOpts(KYOKO));
+    speaker.speakChar('ゃ', charOpts(KYOKO));
     expect(synth.active).toHaveLength(1);
     speaker.speakChar('あ', charOpts(KYOKO));
     expect(synth.active).toHaveLength(0);
     expect(clips.playing).toBe('あ');
-    speaker.speakChar('き', charOpts(KYOKO));
+    speaker.speakChar('っ', charOpts(KYOKO));
     expect(clips.playing).toBeNull();
-    expect(synth.active.map((u) => u.text)).toEqual(['き']);
-    speaker.speakChar('い', charOpts(KYOKO));
-    speaker.speakChar('う', charOpts(KYOKO));
-    expect(clips.played).toEqual(['あ', 'い', 'う']);
-    expect(clips.playing).toBe('う');
+    expect(synth.active.map((u) => u.text)).toEqual(['っ']);
+    speaker.speakChar('か', charOpts(KYOKO));
+    speaker.speakChar('ど', charOpts(KYOKO));
+    expect(clips.played).toEqual(['あ', 'か', 'ど']);
+    expect(clips.playing).toBe('ど');
+    expect(synth.active).toHaveLength(0);
   });
 
   it('「はっせい」の文章は録音を止めてから読み、録音は使わない。stopChars でも止まる', () => {

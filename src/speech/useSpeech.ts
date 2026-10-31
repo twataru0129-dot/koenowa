@@ -110,7 +110,7 @@ export function useSpeech(settings: Settings) {
 
   const activeVoice = pickVoice(voices, settings.voiceURI, settings.allowOnlineVoices);
 
-  // Kyoko で「文字を押したときに声を出す」を使うときだけ、「あ・い・う・え・お」の録音を読み込んでおく
+  // Kyoko で「文字を押したときに声を出す」を使うときだけ、1文字タップ用の録音（71音）を読み込んでおく
   const kyokoSelected = settings.voiceMode === 'specific' && !!activeVoice && isKyokoVoice(activeVoice.name);
   useEffect(() => {
     if (settings.keyEcho && kyokoSelected) speaker.preloadClips();

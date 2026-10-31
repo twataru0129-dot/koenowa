@@ -309,7 +309,7 @@ export class Speaker {
       ? window.SpeechSynthesisUtterance
       : null,
     events: SpeakerEvents = {},
-    /** 「あ・い・う・え・お」の録音（なければ常に音声合成で読む） */
+    /** 1文字タップ用の録音（なければ常に音声合成で読む） */
     clips: ClipPlayer | null = null,
   ) {
     this.synth = synth;
@@ -435,8 +435,8 @@ export class Speaker {
     const rate = voice?.gender === 'female' && options.femaleRate !== undefined ? options.femaleRate : options.rate;
     const chosen = voice ?? undefined;
 
-    // Kyoko を選んでいるときの「あ・い・う・え・お」だけ、録音（Flash TTS）を再生する。
-    // 録音を読み込めていない・再生できなかったときは、これまでどおり Kyoko で読む
+    // Kyoko を選んでいるときは、録音（Flash TTS）がある文字だけ録音を再生する。
+    // 録音のない文字・読み込めていない・再生できなかったときは、これまでどおり Kyoko で読む
     const clips = this.clips;
     if (chosen && clips && isKyokoVoice(chosen.name) && clips.has(char)) {
       if (this.chars.length > 0) {
@@ -484,7 +484,7 @@ export class Speaker {
     return { ok: true };
   }
 
-  /** 「あ・い・う・え・お」の録音を読み込んでおく（オフラインでも Service Worker の保存から読む） */
+  /** 1文字タップ用の録音を読み込んでおく（オフラインでも Service Worker の保存から読む） */
   preloadClips() {
     this.clips?.preload();
   }
