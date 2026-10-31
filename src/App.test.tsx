@@ -5,7 +5,7 @@ import { Speaker } from './speech/speech';
 import { setSpeakerForTesting } from './speech/useSpeech';
 import { LEARNING_KEY } from './state/learning';
 import { STORAGE_KEYS } from './state/storage';
-import { FakeSynth, FakeUtterance, IOS_JA_VOICES } from './test/fakeSpeech';
+import { FakeClipPlayer, FakeSynth, FakeUtterance, IOS_JA_VOICES } from './test/fakeSpeech';
 
 let synth: FakeSynth;
 
@@ -1171,8 +1171,9 @@ describe('ご意見・ご要望とアップデート情報', () => {
     expect(dialog()).toHaveAccessibleName('アップデート情報');
     expect(screen.getByRole('heading', { level: 3, name: 'アップデート情報' })).toHaveFocus();
     const entries = screen.getAllByTestId(/^changelog-/).map((el) => el.getAttribute('data-testid'));
-    expect(entries).toEqual(['changelog-1.1.1', 'changelog-1.1.0', 'changelog-1.0.0']);
-    expect(within(screen.getByTestId('changelog-1.1.1')).getByText('最新')).toBeInTheDocument();
+    expect(entries).toEqual(['changelog-1.1.2', 'changelog-1.1.1', 'changelog-1.1.0', 'changelog-1.0.0']);
+    expect(within(screen.getByTestId('changelog-1.1.2')).getByText('最新')).toBeInTheDocument();
+    expect(within(screen.getByTestId('changelog-1.1.1')).queryByText('最新')).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId('changelog-1.1.1')).getByText(
         '女性音声の1文字読み上げを、よりゆっくり聞き取れるように調整しました。',
@@ -1211,7 +1212,7 @@ describe('ご意見・ご要望とアップデート情報', () => {
 
   it('ヘッダーのバージョン番号は package.json と同じで、アップデート情報の最新と一致する', () => {
     render(<App />);
-    expect(pkg.version).toBe('1.1.1');
+    expect(pkg.version).toBe('1.1.2');
     expect(screen.getByLabelText(`バージョン ${pkg.version}`)).toHaveTextContent(`v${pkg.version}`);
   });
 });
@@ -1288,5 +1289,85 @@ describe('1文字の読み上げの速さ（女性の声だけ 0.80）', () => {
     expect(Object.keys(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings)!))).not.toContain('femaleRate');
     fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
     expect(JSON.parse(localStorage.getItem(LEARNING_KEY)!).counts['ねむい'].count).toBe(1);
+  });
+});
+
+describe('Kyoko の1文字タップの録音（画面からの操作）', () => {
+  const KYOKO = 'com.apple.voice.compact.ja-JP.Kyoko';
+  let clips: FakeClipPlayer;
+  const start = (settings: Record<string, unknown>) => {
+    synth.voiceList = [...IOS_JA_VOICES];
+    clips = new FakeClipPlayer();
+    setSpeakerForTesting(
+      new Speaker(synth as unknown as SpeechSynthesis, FakeUtterance as unknown as typeof SpeechSynthesisUtterance, {}, clips),
+    );
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+    return render(<App />);
+  };
+
+  it('Kyoko で文字の読み上げがオンのときだけ、録音を読み込む', () => {
+    start({ keyEcho: true, voiceMode: 'specific', voiceURI: KYOKO });
+    expect(clips.preloadCount).toBeGreaterThan(0);
+  });
+
+  it('端末の標準音声・男性の声・文字の読み上げがオフのときは読み込まない', () => {
+    const r1 = start({ keyEcho: true, voiceMode: 'system' });
+    expect(clips.preloadCount).toBe(0);
+    r1.unmount();
+    const r2 = start({ keyEcho: true, voiceMode: 'specific', voiceURI: 'com.apple.voice.compact.ja-JP.Otoya' });
+    expect(clips.preloadCount).toBe(0);
+    r2.unmount();
+    start({ keyEcho: false, voiceMode: 'specific', voiceURI: KYOKO });
+    expect(clips.preloadCount).toBe(0);
+  });
+
+  it('「きょうがっこう」と押すと、かなは録音、小さい文字は Kyoko。「はっせい」は文章全体を設定の速さで読む', () => {
+    start({ keyEcho: true, voiceMode: 'specific', voiceURI: KYOKO, rate: 'slow' });
+    tap(key('き'));
+    pageTo(3);
+    tap(key('ちいさい よ'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'ょ', rate: 0.8 });
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
+    expect(clips.playing).toBeNull();
+    synth.finish();
+    pageTo(1);
+    tap(key('う'));
+    pageTo(2);
+    tap(key('が'));
+    pageTo(3);
+    tap(key('ちいさい つ'));
+    synth.finish();
+    pageTo(1);
+    tap(key('こ'));
+    tap(key('う'));
+    expect(clips.played).toEqual(['き', 'う', 'が', 'こ', 'う']);
+    expect(synth.spoken.map((u) => u.text)).toEqual(['ょ', 'っ']);
+    expect(clips.playing).toBe('う');
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(clips.playing).toBeNull();
+    expect(synth.active.map((u) => u.text)).toEqual(['きょうがっこう']);
+    expect(synth.active[0].rate).toBe(0.6);
+    expect(shown()).toBe('きょうがっこう');
+  });
+
+  it('文字の読み上げをオフにすると再生中の録音を止め、以後は鳴らさない', () => {
+    start({ keyEcho: true, voiceMode: 'specific', voiceURI: KYOKO });
+    tap(key('あ'));
+    expect(clips.playing).toBe('あ');
+    fireEvent.click(screen.getAllByRole('button', { name: 'せってい' })[0]);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: /文字を押したときに声を出す/ }));
+    expect(clips.playing).toBeNull();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'とじる' }));
+    tap(key('い'));
+    expect(clips.played).toEqual(['あ']);
+    expect(shown()).toBe('あい');
+  });
+
+  it('録音の再生は自動登録に数えず、「はっせい」だけを数える', () => {
+    start({ keyEcho: true, voiceMode: 'specific', voiceURI: KYOKO });
+    for (const ch of ['あ', 'お', 'い']) tap(key(ch));
+    expect(JSON.parse(localStorage.getItem(LEARNING_KEY) ?? '{"counts":{}}').counts).toEqual({});
+    fireEvent.click(screen.getByRole('button', { name: 'はっせい' }));
+    expect(JSON.parse(localStorage.getItem(LEARNING_KEY)!).counts['あおい'].count).toBe(1);
   });
 });

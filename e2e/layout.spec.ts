@@ -685,3 +685,104 @@ test.describe('ご意見・ご要望とアップデート情報', () => {
     await context.setOffline(false);
   });
 });
+
+test.describe('Kyoko の1文字タップの録音（71音）', () => {
+  // 再生と音声合成を記録する（実際の音は出さない）。声は Kyoko だけを返す
+  const record = () => {
+    const w = window as unknown as { __played: string[]; __spoken: string[] };
+    w.__played = [];
+    w.__spoken = [];
+    const voices = [{ name: 'Kyoko', lang: 'ja-JP', voiceURI: 'kyoko', localService: true, default: true }];
+    Object.defineProperty(window.speechSynthesis, 'getVoices', { value: () => voices });
+    Object.defineProperty(window.speechSynthesis, 'speak', {
+      value: (u: SpeechSynthesisUtterance) => {
+        w.__spoken.push(u.text);
+        setTimeout(() => u.onend?.(new Event('end') as SpeechSynthesisEvent), 20);
+      },
+    });
+    Object.defineProperty(window.speechSynthesis, 'cancel', { value: () => undefined });
+    // テスト用の声はブラウザーの本物の声ではないため、そのまま受け取れるようにする
+    Object.defineProperty(SpeechSynthesisUtterance.prototype, 'voice', {
+      configurable: true,
+      get() {
+        return (this as { _v?: unknown })._v ?? null;
+      },
+      set(v) {
+        (this as { _v?: unknown })._v = v;
+      },
+    });
+    HTMLMediaElement.prototype.play = function () {
+      w.__played.push(this.src);
+      setTimeout(() => this.dispatchEvent(new Event('playing')), 10);
+      return Promise.resolve();
+    };
+    if (!localStorage.getItem('koenowa.v1.settings')) {
+      localStorage.setItem('koenowa.v1.settings', JSON.stringify({ keyEcho: true, voiceMode: 'specific', voiceURI: 'kyoko' }));
+    }
+  };
+
+  test('通信がなくても、71音は録音、小さい文字は Kyoko で読む。はっせいは文章全体', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 664 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(record);
+    const page = await ctx.newPage();
+    await page.goto('./');
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await page.reload();
+    await ctx.setOffline(true);
+    await page.reload();
+    // 録音の読み込み（Service Worker の保存から）を待つ
+    await page.waitForFunction(() =>
+      performance.getEntriesByType('resource').filter((e) => /flash-tts-(aiueo|kana)\/[a-z]+\.m4a$/.test(e.name)).length >= 71,
+    );
+    await page.waitForTimeout(200);
+    const state = () =>
+      page.evaluate(() => {
+        const w = window as unknown as { __played: string[]; __spoken: string[] };
+        return { __played: w.__played, __spoken: w.__spoken };
+      });
+    await page.getByRole('button', { name: 'あ', exact: true }).tap();
+    await page.getByRole('button', { name: 'か', exact: true }).tap();
+    await page.getByRole('button', { name: /^3ページ目/ }).click();
+    await page.getByRole('button', { name: 'ちいさい や' }).tap();
+    await page.getByRole('button', { name: /^2ページ目/ }).click();
+    await page.getByRole('button', { name: 'ど', exact: true }).tap();
+    await page.waitForTimeout(100);
+    let s = await state();
+    expect(s.__played).toHaveLength(3);
+    expect(s.__played.every((src) => src.startsWith('blob:'))).toBe(true);
+    // 公開先の Content-Type に関係なく、iOS Safari が再生できる種類（audio/mp4）にしている
+    const types = await page.evaluate(
+      async (srcs) => Promise.all(srcs.map(async (src) => (await (await fetch(src)).blob()).type)),
+      s.__played,
+    );
+    expect(types).toEqual(['audio/mp4', 'audio/mp4', 'audio/mp4']);
+    // 3つとも別の録音（あ・か・ど）
+    expect(new Set(s.__played).size).toBe(3);
+    expect(s.__spoken).toEqual(['ゃ']);
+    await page.getByRole('button', { name: 'はっせい' }).tap();
+    s = await state();
+    expect(s.__spoken).toEqual(['ゃ', 'あかゃど']);
+    await expect(page.getByTestId('text-display')).toHaveText(/^あかゃど/);
+    await ctx.setOffline(false);
+    await ctx.close();
+  });
+
+  test('録音を読み込めないときは、あ も Kyoko で読む', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 664 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(record);
+    await ctx.route('**/flash-tts-aiueo/**', (route) => route.fulfill({ status: 404, body: '' }));
+    const page = await ctx.newPage();
+    await page.goto('./');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: 'あ', exact: true }).tap();
+    const s = await page.evaluate(() => {
+      const w = window as unknown as { __played: string[]; __spoken: string[] };
+      return { __played: w.__played, __spoken: w.__spoken };
+    });
+    expect(s.__played).toEqual([]);
+    expect(s.__spoken).toEqual(['あ']);
+    await ctx.close();
+  });
+});

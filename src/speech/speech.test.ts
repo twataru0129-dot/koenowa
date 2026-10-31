@@ -1,4 +1,5 @@
-import { FakeSynth, FakeUtterance, fakeVoice, IOS_JA_VOICES } from '../test/fakeSpeech';
+import { FLASH_TTS_CLIPS } from './clips';
+import { FakeClipPlayer, FakeSynth, FakeUtterance, fakeVoice, IOS_JA_VOICES } from '../test/fakeSpeech';
 import {
   buildSpeechText,
   CHAR_QUEUE_MAX,
@@ -473,5 +474,128 @@ describe('1文字の読み上げ：女性の声だけ少しゆっくり', () => 
     const { synth, speaker } = make(IOS_JA_VOICES);
     speaker.speak('あいす', { ...opts, rate: 0.95, voiceURI: 'com.apple.voice.compact.ja-JP.Kyoko' });
     expect(synth.spoken.at(-1)).toMatchObject({ text: 'あいす', rate: 0.95 });
+  });
+});
+
+describe('Kyoko の1文字タップは、録音のある文字だけ録音を再生する', () => {
+  const KYOKO = 'com.apple.voice.compact.ja-JP.Kyoko';
+  const KYOKO_EN = 'com.apple.voice.enhanced.ja-JP.Kyoko';
+  const charOpts = (voiceURI: string | null, useSystemVoice = false) => ({
+    rate: 0.95,
+    femaleRate: 0.8,
+    voiceURI,
+    allowOnlineVoices: false,
+    useSystemVoice,
+  });
+  const makeWithClips = () => {
+    const synth = new FakeSynth(IOS_JA_VOICES);
+    const clips = new FakeClipPlayer();
+    const speaker = new Speaker(
+      synth as unknown as SpeechSynthesis,
+      FakeUtterance as unknown as typeof SpeechSynthesisUtterance,
+      {},
+      clips,
+    );
+    return { synth, clips, speaker };
+  };
+
+  it('Kyoko（標準・拡張）で「あ〜お」を押すと録音を再生し、音声合成は使わない', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    for (const [i, ch] of ['あ', 'い', 'う', 'え', 'お'].entries()) {
+      expect(speaker.speakChar(ch, charOpts(i % 2 ? KYOKO_EN : KYOKO))).toEqual({ ok: true });
+    }
+    expect(clips.played).toEqual(['あ', 'い', 'う', 'え', 'お']);
+    expect(synth.spoken).toHaveLength(0);
+  });
+
+  it('Kyoko では、録音のある71音（清音・濁音・半濁音）はすべて録音を再生する', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    const all = Object.keys(FLASH_TTS_CLIPS);
+    for (const ch of all) speaker.speakChar(ch, charOpts(KYOKO));
+    expect(clips.played).toEqual(all);
+    expect(synth.spoken).toHaveLength(0);
+  });
+
+  it('Kyoko でも録音のない文字（小さい文字）は、これまでどおり Kyoko（0.80）で読む', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    for (const ch of ['ぁ', 'ぃ', 'ゃ', 'ょ', 'っ', 'ゎ']) {
+      speaker.speakChar(ch, charOpts(KYOKO));
+      expect(synth.spoken.at(-1)).toMatchObject({ text: ch, rate: 0.8 });
+      expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
+      synth.finish();
+    }
+    expect(clips.played).toEqual([]);
+  });
+
+  it('Kyoko 以外（O-ren・Otoya・端末の標準音声）では録音を使わない', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    speaker.speakChar('あ', charOpts('com.apple.voice.compact.ja-JP.O-ren'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.8 });
+    synth.finish();
+    speaker.speakChar('あ', charOpts('com.apple.voice.compact.ja-JP.Otoya'));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.95 });
+    synth.finish();
+    speaker.speakChar('あ', charOpts(null, true));
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.95, voice: null });
+    expect(clips.played).toEqual([]);
+  });
+
+  it('録音がまだ読み込めていなければ、すぐに既存の Kyoko で読む', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    clips.available.clear();
+    speaker.speakChar('あ', charOpts(KYOKO));
+    expect(clips.played).toEqual([]);
+    expect(synth.spoken.at(-1)).toMatchObject({ text: 'あ', rate: 0.8 });
+    expect(synth.spoken.at(-1)?.voice?.name).toBe('Kyoko');
+  });
+
+  it('録音の再生に失敗したら、既存の Kyoko（0.80）で読み直す', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    clips.failNext = true;
+    speaker.speakChar('い', charOpts(KYOKO));
+    expect(clips.played).toEqual(['い']);
+    expect(synth.spoken).toHaveLength(1);
+    expect(synth.spoken[0]).toMatchObject({ text: 'い', rate: 0.8, pitch: 1 });
+    expect(synth.spoken[0].voice?.name).toBe('Kyoko');
+  });
+
+  it('録音と音声合成は重ならない：どちらかを鳴らすときは、もう一方を止める', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    speaker.speakChar('ゃ', charOpts(KYOKO));
+    expect(synth.active).toHaveLength(1);
+    speaker.speakChar('あ', charOpts(KYOKO));
+    expect(synth.active).toHaveLength(0);
+    expect(clips.playing).toBe('あ');
+    speaker.speakChar('っ', charOpts(KYOKO));
+    expect(clips.playing).toBeNull();
+    expect(synth.active.map((u) => u.text)).toEqual(['っ']);
+    speaker.speakChar('か', charOpts(KYOKO));
+    speaker.speakChar('ど', charOpts(KYOKO));
+    expect(clips.played).toEqual(['あ', 'か', 'ど']);
+    expect(clips.playing).toBe('ど');
+    expect(synth.active).toHaveLength(0);
+  });
+
+  it('「はっせい」の文章は録音を止めてから読み、録音は使わない。stopChars でも止まる', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    speaker.speakChar('あ', charOpts(KYOKO));
+    speaker.speak('あいうえお', { ...opts, voiceURI: KYOKO });
+    expect(clips.playing).toBeNull();
+    expect(synth.active.map((u) => u.text)).toEqual(['あいうえお']);
+    speaker.speakChar('お', charOpts(KYOKO));
+    expect(clips.playing).toBe('お');
+    speaker.stopChars();
+    expect(clips.playing).toBeNull();
+  });
+
+  it('文章の読み上げ中に失敗が届いても、読み直さない（古い失敗は無視）', () => {
+    const { synth, clips, speaker } = makeWithClips();
+    speaker.speakChar('あ', charOpts(KYOKO));
+    const lateFail = clips.pendingFail!;
+    speaker.speak('かき', { ...opts, voiceURI: KYOKO });
+    // FakeClipPlayer は stop で通知を捨てるので、実際の AudioClipPlayer と同じく何も起きない
+    expect(clips.pendingFail).toBeNull();
+    void lateFail;
+    expect(synth.active.map((u) => u.text)).toEqual(['かき']);
   });
 });

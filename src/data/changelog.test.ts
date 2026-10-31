@@ -12,7 +12,7 @@ const compare = (a: string, b: string) => {
 describe('アップデート情報のデータ', () => {
   it('いちばん上（最新）のバージョンは package.json の version と同じ', () => {
     expect(CHANGELOG[0].version).toBe(pkg.version);
-    expect(pkg.version).toBe('1.1.1');
+    expect(pkg.version).toBe('1.1.2');
   });
 
   it('新しいバージョンから順に並び、同じ番号はない', () => {
@@ -32,8 +32,19 @@ describe('アップデート情報のデータ', () => {
     }
   });
 
-  it('v1.1.1 の内容', () => {
+  it('v1.1.2 の内容', () => {
     expect(CHANGELOG[0]).toEqual({
+      version: '1.1.2',
+      title: 'Kyoko の1文字読み上げを聞き取りやすく',
+      items: [
+        '声に Kyoko を選んでいるとき、文字盤の清音・濁音・半濁音（71文字）を押したときの声を、聞き取りやすい録音の声にしました。',
+        '小さい文字（ゃ・っ など）は、これまでどおり Kyoko の声で読みます。',
+      ],
+    });
+  });
+
+  it('v1.1.1 の内容', () => {
+    expect(CHANGELOG[1]).toEqual({
       version: '1.1.1',
       title: '女性の声の1文字読み上げを調整',
       items: ['女性音声の1文字読み上げを、よりゆっくり聞き取れるように調整しました。'],
@@ -41,14 +52,14 @@ describe('アップデート情報のデータ', () => {
   });
 
   it('v1.1.0 と v1.0.0 の内容は残っている（公開日は決まっていないので書かない）', () => {
-    expect(CHANGELOG.map((e) => e.version)).toEqual(['1.1.1', '1.1.0', '1.0.0']);
-    expect(CHANGELOG[1]).toEqual({
+    expect(CHANGELOG.map((e) => e.version)).toEqual(['1.1.2', '1.1.1', '1.1.0', '1.0.0']);
+    expect(CHANGELOG[2]).toEqual({
       version: '1.1.0',
       title: 'ご意見・ご要望とアップデート情報を追加',
       items: ['ご意見・ご要望を送れるようになりました。', '新しい機能や改善内容を確認できるようになりました。'],
     });
-    expect(CHANGELOG[2].title).toBe('こえのわの基本機能');
-    expect(CHANGELOG[2].items).toHaveLength(6);
+    expect(CHANGELOG[3].title).toBe('こえのわの基本機能');
+    expect(CHANGELOG[3].items).toHaveLength(6);
     expect(CHANGELOG.every((e) => e.date === undefined)).toBe(true);
   });
 

@@ -9,6 +9,7 @@ import {
   type SyllableSeparator,
   type VoiceInfo,
 } from './speech';
+import { AudioClipPlayer, isKyokoVoice } from './clips';
 
 /** 文字ごとの読み上げの速さ */
 export const KEY_ECHO_RATE = 0.95;
@@ -27,7 +28,7 @@ export function setSpeakerForTesting(speaker: Speaker | null) {
 }
 
 function getSpeaker(): Speaker {
-  if (!sharedSpeaker) sharedSpeaker = new Speaker();
+  if (!sharedSpeaker) sharedSpeaker = new Speaker(undefined, undefined, undefined, new AudioClipPlayer());
   return sharedSpeaker;
 }
 
@@ -108,6 +109,12 @@ export function useSpeech(settings: Settings) {
   const diagnostics = useCallback(() => speaker.diagnostics(), [speaker]);
 
   const activeVoice = pickVoice(voices, settings.voiceURI, settings.allowOnlineVoices);
+
+  // Kyoko で「文字を押したときに声を出す」を使うときだけ、1文字タップ用の録音（71音）を読み込んでおく
+  const kyokoSelected = settings.voiceMode === 'specific' && !!activeVoice && isKyokoVoice(activeVoice.name);
+  useEffect(() => {
+    if (settings.keyEcho && kyokoSelected) speaker.preloadClips();
+  }, [speaker, settings.keyEcho, kyokoSelected]);
   const systemVoiceOk = systemVoiceAllowed(voices, settings.allowOnlineVoices);
 
   return {

@@ -1,7 +1,7 @@
 {
   "name": "koenowa",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "こえのわ — ひらがな文字盤で文章をつくり、端末の日本語音声で読み上げるAAC用PWA",
   "type": "module",
   "scripts": {

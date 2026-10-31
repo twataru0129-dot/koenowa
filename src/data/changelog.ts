@@ -22,6 +22,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.1.2',
+    title: 'Kyoko の1文字読み上げを聞き取りやすく',
+    items: [
+      '声に Kyoko を選んでいるとき、文字盤の清音・濁音・半濁音（71文字）を押したときの声を、聞き取りやすい録音の声にしました。',
+      '小さい文字（ゃ・っ など）は、これまでどおり Kyoko の声で読みます。',
+    ],
+  },
+  {
     version: '1.1.1',
     title: '女性の声の1文字読み上げを調整',
     items: ['女性音声の1文字読み上げを、よりゆっくり聞き取れるように調整しました。'],
